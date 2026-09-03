@@ -112,6 +112,10 @@ COLOR_BARREL = (30, 30, 30)
 COLOR_PROJECTILE = (30, 30, 30)
 COLOR_EXPLOSION = (230, 140, 30)
 COLOR_TEXT = (20, 20, 20)
+# Turn-based HUD (§12 item 4): the active player's label is drawn in this
+# color instead of COLOR_TEXT so whose turn it is stays visible without
+# extra UI chrome.
+COLOR_TEXT_ACTIVE = (170, 30, 30)
 COLOR_HP_BG = (80, 80, 80)
 COLOR_HP_FG = (200, 40, 40)
 

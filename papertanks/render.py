@@ -149,7 +149,14 @@ class Renderer:
             f"P2  aim {world.tanks[1].aim_deg:5.1f}deg  power {world.tanks[1].power:5.0f}",
         ]
         for i, text in enumerate(labels):
-            surface = self._font.render(text, True, config.COLOR_TEXT)
+            # Whose turn it is (world.active_player) is otherwise invisible
+            # to the player - a ">" prefix plus a distinct color on that
+            # label is the minimal indicator this needs (§12 item 4).
+            active = i == world.active_player
+            if active:
+                text = f"> {text}"
+            color = config.COLOR_TEXT_ACTIVE if active else config.COLOR_TEXT
+            surface = self._font.render(text, True, color)
             x = 12 if i == 0 else config.SCREEN_WIDTH - surface.get_width() - 12
             screen.blit(surface, (x, 12))
 

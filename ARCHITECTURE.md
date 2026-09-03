@@ -430,6 +430,51 @@ needed in `World.step`.
 "the simulation doesn't advance," not a scattered set of `if not
 paused` checks throughout the codebase.
 
+### Turn-based mode (§12 item 4)
+
+Two more fields on `World`, reset in `_reset()` (so `restart()` naturally
+starts the next game on player 0's turn): `active_player: int` (index
+into `self.tanks`, same convention as `Projectile.owner`/`World.winner`)
+and `shot_fired_this_turn: bool`.
+
+The rules:
+
+- `_apply_intent` now takes the tank's index. Every tank's `reload_timer`
+  still ticks down every tick regardless of whose turn it is (harmless,
+  and it means `reload_timer` doesn't need its own turn-aware special
+  case), but aim/power/move/fire are applied only when
+  `tank_index == self.active_player`. The inactive tank's `Intent` is
+  still computed by `controls.py` and passed into `step()` every frame —
+  it's simply read and discarded, which is what makes this a pure
+  `World`-side gate rather than something `controls.py` needs to know
+  about.
+- Firing additionally requires `not self.shot_fired_this_turn`
+  (alongside the pre-existing `reload_timer <= 0.0` check) — one shot per
+  turn, not just one shot per cooldown window. `_fire()` sets
+  `shot_fired_this_turn = True`.
+- A new `_advance_turn()`, called at the end of `step()` after
+  `_check_win_condition()`, hands the turn to the other tank
+  (`active_player = 1 - active_player`, `shot_fired_this_turn = False`)
+  once a shot has been fired *and* both `self.projectiles` and
+  `self.explosions` are empty again — i.e. the fired projectile has
+  fully resolved (hit something and its explosion finished, expired
+  off-screen, or hit its max lifetime) with no visual feedback still
+  playing. It's skipped once `state == GameState.GAME_OVER`, checked
+  after the win condition specifically so a game-ending shot doesn't
+  hand off a turn nobody can play.
+- The active tank keeps full aim/power/move control between firing and
+  the turn passing — only a second *fire* is blocked. Movement/aim are
+  not frozen post-fire; this was a deliberate scope choice (repositioning
+  while a shot is still in the air is allowed), not an oversight, and is
+  the one open question worth revisiting if playtesting says otherwise.
+
+None of this reaches into `physics.py`/`collision.py`: a projectile still
+integrates and collides exactly as before, and `_advance_turn()` only
+reads the size of `self.projectiles`/`self.explosions`, never their
+contents. `controls.py` is also unchanged — both players' keys are
+sampled every frame regardless of whose turn it is, which is what §12
+item 4 meant by "would live entirely in `World`/`GameState`."
+
 ## 7. Input: `controls.py`
 
 `build_intents()` samples `pygame.key.get_pressed()` once per real
@@ -449,8 +494,9 @@ computed inside `World.step` using the fixed `dt`, so aim/power values
 end up frame-rate independent even though input sampling itself isn't.
 
 Firing has no debounce logic here — holding fire just means "fire
-whenever `World`'s per-tank `reload_timer` allows it." Shot pacing has
-exactly one source of truth (`World`), not two.
+whenever `World` allows it" (per-tank `reload_timer`, and, since §12
+item 4, whether it's this tank's turn and it hasn't already fired this
+turn). Shot pacing has exactly one source of truth (`World`), not two.
 
 ## 8. Rendering: `render.py`
 
@@ -459,7 +505,10 @@ exactly one source of truth (`World`), not two.
 contains no gameplay rules (no damage math, no collision checks). It
 draws, in order: background, terrain, tanks (body + barrel + HP bar),
 projectiles (interpolated by `alpha`), explosions, HUD text, and any
-pause/game-over overlay.
+pause/game-over overlay. Since §12 item 4, the HUD's per-tank label also
+reads `world.active_player` to mark whose turn it is (a `>` prefix and
+`config.COLOR_TEXT_ACTIVE` instead of `config.COLOR_TEXT`) — still a
+read, not a mutation.
 
 This one-way read is what makes it safe to swap rendering later
 (different art style, a debug overlay, a headless test run) without
@@ -547,8 +596,9 @@ These are deliberate omissions for this first slice, not oversights:
 - No window resizing — the screen is a fixed size, keeping the
   renderer's coordinate math trivial.
 - No sound/particles beyond a simple expanding-ring explosion.
-- No turn structure — both players can aim/fire simultaneously,
-  paced only by each tank's own reload cooldown.
+- ~~No turn structure~~ — done (§12 item 4): `World.active_player` gates
+  aim/power/move/fire to one tank at a time; the other tank's input is
+  still sampled every frame by `controls.py` but discarded by `World`.
 
 ## 12. Natural next slices, in order
 
@@ -560,9 +610,12 @@ These are deliberate omissions for this first slice, not oversights:
    the ground-drawing code in `render.py` need to change; tanks,
    projectiles, and collision code already go through that seam.
 3. **Audio/particle feedback** on fire and impact.
-4. **Turn-based mode**, if simultaneous play turns out to feel wrong —
-   would live entirely in `World`/`GameState`, without touching physics
-   or collision.
+4. ~~**Turn-based mode**~~ — done: `World.active_player` (index into
+   `self.tanks`, same convention as `owner_index`/`winner`) and
+   `World.shot_fired_this_turn` gate input entirely inside `World`
+   (`_apply_intent`, `_fire`, and the new `_advance_turn`), exactly as
+   predicted — `physics.py`/`collision.py` and `controls.py` were not
+   touched. See §6 for the rules.
 
 Each of these extends an existing seam rather than requiring a
 restructure — which was the point of keeping the modules this narrow
@@ -595,6 +648,14 @@ the properties this document claims elsewhere, not exhaustive:
   flight ending in a collision/explosion, the win/draw condition, restart,
   and that two `World`s given the same seed and input sequence end up in
   identical states (determinism, §10).
+- `test_turns.py` — turn-based mode (§6, "Turn-based mode", §12 item 4):
+  `active_player` starts at 0, the inactive tank's intent is a no-op,
+  one shot per turn holds even once `reload_timer` alone would allow a
+  second shot, the turn passes only once both the fired projectile and
+  its explosion have cleared (not just the projectile), an off-screen
+  shot with no explosion still passes the turn, `restart()` resets turn
+  state, a game-ending shot does not also advance the turn, and turn
+  state stays part of the determinism guarantee.
 
 Tank collision testing uses tanks with no `sprite_key` (a plain
 `Rectangle` shape) except where determinism tests exercise the real

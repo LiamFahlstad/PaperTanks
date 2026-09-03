@@ -77,6 +77,13 @@ class World:
         self.explosions: List[Explosion] = []
         self.state = GameState.PLAYING
         self.winner: Optional[int] = None
+        # Turn-based gating (§12 item 4 of ARCHITECTURE.md): index into
+        # self.tanks, same convention as owner_index/winner. Only the
+        # active tank's aim/power/move/fire intent is applied each tick;
+        # the inactive tank's intent is read but discarded (see
+        # _apply_intent). Physics/collision are unaware this exists.
+        self.active_player: int = 0
+        self.shot_fired_this_turn: bool = False
 
     def restart(self) -> None:
         self._reset()
@@ -97,17 +104,31 @@ class World:
         if intents is None:
             intents = _neutral_intents()
 
-        for tank, intent in zip(self.tanks, intents):
-            self._apply_intent(tank, intent, dt)
+        for tank_index, (tank, intent) in enumerate(zip(self.tanks, intents)):
+            self._apply_intent(tank_index, tank, intent, dt)
 
         self._integrate_projectiles(dt)
         self._update_explosions(dt)
         self._check_win_condition()
+        self._advance_turn()
 
-    def _apply_intent(self, tank: Tank, intent: Intent, dt: float) -> None:
+    def _apply_intent(
+        self, tank_index: int, tank: Tank, intent: Intent, dt: float
+    ) -> None:
+        """Apply one tank's Intent for one tick - but only if it's this
+        tank's turn (tank_index == self.active_player). The inactive
+        tank's reload_timer still ticks down (harmless, and keeps this
+        method simple rather than special-casing it too), but its
+        aim/power/move/fire is entirely ignored: turn gating lives here,
+        not in controls.py, so both players' keys can keep being sampled
+        every frame with no knowledge of whose turn it is.
+        """
         tank.reload_timer = max(0.0, tank.reload_timer - dt)
 
         if not tank.alive:
+            return
+
+        if tank_index != self.active_player:
             return
 
         tank.aim_deg = collision.clamp(
@@ -123,7 +144,7 @@ class World:
 
         self._apply_movement(tank, intent.move_delta, dt)
 
-        if intent.fire and tank.reload_timer <= 0.0:
+        if intent.fire and tank.reload_timer <= 0.0 and not self.shot_fired_this_turn:
             self._fire(tank)
 
     def _apply_movement(self, tank: Tank, move_delta: float, dt: float) -> None:
@@ -176,6 +197,7 @@ class World:
             )
         )
         tank.reload_timer = config.TANK_FIRE_COOLDOWN
+        self.shot_fired_this_turn = True
 
     def _integrate_projectiles(self, dt: float) -> None:
         survivors: List[Projectile] = []
@@ -230,3 +252,21 @@ class World:
         if len(alive) <= 1:
             self.state = GameState.GAME_OVER
             self.winner = alive[0] if alive else None
+
+    def _advance_turn(self) -> None:
+        """Hand the turn to the other tank once the active player's shot
+        has fully resolved: fired, and both its projectile and any
+        resulting explosion have cleared. Until then the active player
+        keeps aim/power/move control (they just can't fire again -
+        one shot per turn is enforced separately in _apply_intent via
+        shot_fired_this_turn). Skipped once the game has ended - no
+        point handing off a turn nobody can play.
+        """
+        if self.state == GameState.GAME_OVER:
+            return
+        if not self.shot_fired_this_turn:
+            return
+        if self.projectiles or self.explosions:
+            return
+        self.active_player = 1 - self.active_player
+        self.shot_fired_this_turn = False
