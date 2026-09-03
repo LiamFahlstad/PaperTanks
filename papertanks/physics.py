@@ -13,7 +13,9 @@ from __future__ import annotations
 import pygame
 
 
-def apply_gravity(velocity: pygame.Vector2, gravity: float, dt: float) -> pygame.Vector2:
+def apply_gravity(
+    velocity: pygame.Vector2, gravity: float, dt: float
+) -> pygame.Vector2:
     """Return a new velocity with gravity applied for one timestep.
 
     `gravity` is a positive px/s^2 value; it is added to the y component
@@ -22,6 +24,8 @@ def apply_gravity(velocity: pygame.Vector2, gravity: float, dt: float) -> pygame
     return pygame.Vector2(velocity.x, velocity.y + gravity * dt)
 
 
-def integrate_position(position: pygame.Vector2, velocity: pygame.Vector2, dt: float) -> pygame.Vector2:
+def integrate_position(
+    position: pygame.Vector2, velocity: pygame.Vector2, dt: float
+) -> pygame.Vector2:
     """Return a new position advanced by `velocity` over one timestep."""
     return position + velocity * dt

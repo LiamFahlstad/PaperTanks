@@ -64,7 +64,9 @@ def _point_in_polygon(point: pygame.Vector2, points: Sequence[pygame.Vector2]) -
     return inside
 
 
-def _closest_point_on_segment(p: pygame.Vector2, a: pygame.Vector2, b: pygame.Vector2) -> pygame.Vector2:
+def _closest_point_on_segment(
+    p: pygame.Vector2, a: pygame.Vector2, b: pygame.Vector2
+) -> pygame.Vector2:
     """Closest point to `p` on the segment a-b (clamped to the segment)."""
     ab = b - a
     length_sq = ab.length_squared()
@@ -74,7 +76,9 @@ def _closest_point_on_segment(p: pygame.Vector2, a: pygame.Vector2, b: pygame.Ve
     return a + ab * t
 
 
-def circle_vs_polygon(center: pygame.Vector2, radius: float, points: Sequence[pygame.Vector2]) -> bool:
+def circle_vs_polygon(
+    center: pygame.Vector2, radius: float, points: Sequence[pygame.Vector2]
+) -> bool:
     """True if a circle overlaps a simple (possibly concave) polygon.
 
     Two-part test, standard for this shape combination and correct
@@ -112,7 +116,12 @@ def _tank_shape_overlap(center: pygame.Vector2, radius: float, shape: Shape) -> 
     concrete Shape later touches one place.
     """
     if isinstance(shape, Rectangle):
-        rect = pygame.Rect(round(shape.topleft.x), round(shape.topleft.y), round(shape.width), round(shape.height))
+        rect = pygame.Rect(
+            round(shape.topleft.x),
+            round(shape.topleft.y),
+            round(shape.width),
+            round(shape.height),
+        )
         return circle_vs_rect(center, radius, rect)
     if isinstance(shape, Polygon):
         return circle_vs_polygon(center, radius, shape.points)

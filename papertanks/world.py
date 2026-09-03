@@ -63,7 +63,12 @@ class World:
         self.rng = random.Random(self._rng_seed)
         self.terrain = Terrain(config.GROUND_Y)
         self.tanks: List[Tank] = [
-            Tank(x=config.TANK1_START_X, facing=1, color=config.COLOR_TANK_1, sprite_key="tank1"),
+            Tank(
+                x=config.TANK1_START_X,
+                facing=1,
+                color=config.COLOR_TANK_1,
+                sprite_key="tank1",
+            ),
             Tank(x=config.TANK2_START_X, facing=-1, color=config.COLOR_TANK_2),
         ]
         self.projectiles: List[Projectile] = []
@@ -122,7 +127,9 @@ class World:
         muzzle = tank.muzzle_position(self.terrain)
         velocity = tank.aim_direction() * tank.power
         self.projectiles.append(
-            Projectile(position=pygame.Vector2(muzzle), velocity=velocity, owner=owner_index)
+            Projectile(
+                position=pygame.Vector2(muzzle), velocity=velocity, owner=owner_index
+            )
         )
         tank.reload_timer = config.TANK_FIRE_COOLDOWN
 
@@ -135,16 +142,25 @@ class World:
             proj.age += dt
 
             result = collision.sweep_projectile(
-                proj.prev_position, new_pos, proj.radius, self.terrain, self.tanks, proj.owner
+                proj.prev_position,
+                new_pos,
+                proj.radius,
+                self.terrain,
+                self.tanks,
+                proj.owner,
             )
             if result is not None:
                 self.explosions.append(Explosion(position=pygame.Vector2(result.point)))
                 if result.kind == "tank" and result.tank_index is not None:
-                    self._apply_damage(self.tanks[result.tank_index], config.PROJECTILE_DAMAGE)
+                    self._apply_damage(
+                        self.tanks[result.tank_index], config.PROJECTILE_DAMAGE
+                    )
                 continue  # projectile consumed on impact
 
             margin = config.PROJECTILE_OFFSCREEN_MARGIN_PX
-            out_of_bounds = new_pos.x < -margin or new_pos.x > config.SCREEN_WIDTH + margin
+            out_of_bounds = (
+                new_pos.x < -margin or new_pos.x > config.SCREEN_WIDTH + margin
+            )
             if proj.age >= config.PROJECTILE_MAX_LIFETIME or out_of_bounds:
                 continue  # expire silently; safety net, should rarely trigger
 

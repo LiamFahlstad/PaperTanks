@@ -80,8 +80,7 @@ class CollisionBody(WorldObject, ABC):
     """
 
     @abstractmethod
-    def collision_shape(self, terrain: "Terrain") -> Shape:
-        ...
+    def collision_shape(self, terrain: "Terrain") -> Shape: ...
 
 
 class RigidBody(CollisionBody, ABC):
@@ -153,7 +152,9 @@ class Tank(CollisionBody):
         if self.sprite_key is None:
             return Rectangle.from_rect(self.rect(terrain))
 
-        local_polygon = sprite_cache.get_tank_collision_polygon(self.sprite_key, self.facing)
+        local_polygon = sprite_cache.get_tank_collision_polygon(
+            self.sprite_key, self.facing
+        )
         origin = pygame.Vector2(self.rect(terrain).topleft)
         return Polygon(points=tuple(origin + point for point in local_polygon.points))
 

@@ -29,7 +29,9 @@ from .render import Renderer
 from .world import Intent, World
 
 
-def clamp_frame_time(frame_time: float, max_frame_time: float = config.MAX_FRAME_TIME) -> float:
+def clamp_frame_time(
+    frame_time: float, max_frame_time: float = config.MAX_FRAME_TIME
+) -> float:
     """Clamp a real-time frame delta so a long stall (breakpoint, window
     drag) can't force an unbounded run of catch-up physics steps once
     execution resumes ("spiral of death")."""
@@ -61,7 +63,9 @@ def advance_simulation(
 class Game:
     def __init__(self) -> None:
         pygame.init()
-        self.screen = pygame.display.set_mode((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
+        self.screen = pygame.display.set_mode(
+            (config.SCREEN_WIDTH, config.SCREEN_HEIGHT)
+        )
         pygame.display.set_caption(config.WINDOW_TITLE)
         self.clock = pygame.time.Clock()
         self.world = World()
@@ -82,7 +86,9 @@ class Game:
                 keys_pressed = pygame.key.get_pressed()
                 intents = controls.build_intents(keys_pressed)
 
-                accumulator = advance_simulation(self.world, accumulator, frame_time, intents)
+                accumulator = advance_simulation(
+                    self.world, accumulator, frame_time, intents
+                )
 
                 alpha = accumulator / config.FIXED_DT
                 self.renderer.draw(self.screen, self.world, alpha)

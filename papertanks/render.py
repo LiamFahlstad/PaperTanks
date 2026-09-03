@@ -44,12 +44,16 @@ class Renderer:
         if world.state == GameState.PAUSED:
             self._draw_center_text(screen, "PAUSED", "P to resume")
         elif world.state == GameState.GAME_OVER:
-            title = "DRAW" if world.winner is None else f"PLAYER {world.winner + 1} WINS"
+            title = (
+                "DRAW" if world.winner is None else f"PLAYER {world.winner + 1} WINS"
+            )
             self._draw_center_text(screen, title, "R to restart")
 
     def _draw_terrain(self, screen: pygame.Surface, world: World) -> None:
         ground_y = round(world.terrain.height_at(0))
-        rect = pygame.Rect(0, ground_y, config.SCREEN_WIDTH, config.SCREEN_HEIGHT - ground_y)
+        rect = pygame.Rect(
+            0, ground_y, config.SCREEN_WIDTH, config.SCREEN_HEIGHT - ground_y
+        )
         pygame.draw.rect(screen, config.COLOR_GROUND, rect)
 
     def _draw_tank(self, screen: pygame.Surface, world: World, tank: Tank) -> None:
@@ -68,7 +72,9 @@ class Renderer:
 
         self._draw_hp_bar(screen, rect, tank)
 
-    def _get_sprite(self, obj: WorldObject, size: Tuple[int, int]) -> Optional[pygame.Surface]:
+    def _get_sprite(
+        self, obj: WorldObject, size: Tuple[int, int]
+    ) -> Optional[pygame.Surface]:
         """obj.sprite_key's image, loaded/scaled/cached via sprite_cache.py.
 
         Returns None when obj.sprite_key is None, so the caller can fall
@@ -94,16 +100,24 @@ class Renderer:
             return None
         return sprite_cache.get_tank_sprite(tank.sprite_key, tank.facing)
 
-    def _draw_hp_bar(self, screen: pygame.Surface, rect: pygame.Rect, tank: Tank) -> None:
+    def _draw_hp_bar(
+        self, screen: pygame.Surface, rect: pygame.Rect, tank: Tank
+    ) -> None:
         bar_width = rect.width
         bar_height = 6
         bar_x = rect.left
         bar_y = rect.top - bar_height - 6
-        pygame.draw.rect(screen, config.COLOR_HP_BG, (bar_x, bar_y, bar_width, bar_height))
+        pygame.draw.rect(
+            screen, config.COLOR_HP_BG, (bar_x, bar_y, bar_width, bar_height)
+        )
         fraction = max(0.0, tank.hp / config.TANK_MAX_HP)
-        pygame.draw.rect(screen, config.COLOR_HP_FG, (bar_x, bar_y, bar_width * fraction, bar_height))
+        pygame.draw.rect(
+            screen, config.COLOR_HP_FG, (bar_x, bar_y, bar_width * fraction, bar_height)
+        )
 
-    def _draw_projectile(self, screen: pygame.Surface, proj: Projectile, alpha: float) -> None:
+    def _draw_projectile(
+        self, screen: pygame.Surface, proj: Projectile, alpha: float
+    ) -> None:
         draw_pos = proj.prev_position.lerp(proj.position, alpha)
         diameter = max(1, round(proj.radius * 2))
         sprite = self._get_sprite(proj, (diameter, diameter))
@@ -111,7 +125,12 @@ class Renderer:
             rect = sprite.get_rect(center=(round(draw_pos.x), round(draw_pos.y)))
             screen.blit(sprite, rect.topleft)
         else:
-            pygame.draw.circle(screen, config.COLOR_PROJECTILE, (round(draw_pos.x), round(draw_pos.y)), round(proj.radius))
+            pygame.draw.circle(
+                screen,
+                config.COLOR_PROJECTILE,
+                (round(draw_pos.x), round(draw_pos.y)),
+                round(proj.radius),
+            )
 
     def _draw_explosion(self, screen: pygame.Surface, explosion: Explosion) -> None:
         # Explosion inherits sprite_key (like every WorldObject) but stays
@@ -120,7 +139,9 @@ class Renderer:
         # so no _get_sprite() fallback branch is wired in for it.
         radius = config.EXPLOSION_MAX_RADIUS * explosion.progress
         pos = (round(explosion.position.x), round(explosion.position.y))
-        pygame.draw.circle(screen, config.COLOR_EXPLOSION, pos, max(1, round(radius)), width=2)
+        pygame.draw.circle(
+            screen, config.COLOR_EXPLOSION, pos, max(1, round(radius)), width=2
+        )
 
     def _draw_hud(self, screen: pygame.Surface, world: World) -> None:
         labels = [
@@ -132,7 +153,9 @@ class Renderer:
             x = 12 if i == 0 else config.SCREEN_WIDTH - surface.get_width() - 12
             screen.blit(surface, (x, 12))
 
-    def _draw_center_text(self, screen: pygame.Surface, title: str, subtitle: str) -> None:
+    def _draw_center_text(
+        self, screen: pygame.Surface, title: str, subtitle: str
+    ) -> None:
         title_surface = self._big_font.render(title, True, config.COLOR_TEXT)
         subtitle_surface = self._font.render(subtitle, True, config.COLOR_TEXT)
         cx = config.SCREEN_WIDTH // 2

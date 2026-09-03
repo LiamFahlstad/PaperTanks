@@ -108,12 +108,16 @@ def polygon_from_sprite_mask(
 
     mask = pygame.mask.from_surface(surface)
     if mask.count() == 0:
-        raise ValueError("surface has no opaque pixels; cannot derive a collision polygon")
+        raise ValueError(
+            "surface has no opaque pixels; cannot derive a collision polygon"
+        )
 
     cx, cy = mask.centroid()
     centroid = pygame.Vector2(cx, cy)
 
-    outline = mask.outline()  # list[tuple[int, int]] in local pixel space, contour order
+    outline = (
+        mask.outline()
+    )  # list[tuple[int, int]] in local pixel space, contour order
 
     two_pi = 2.0 * math.pi
     sector_width = two_pi / num_points
@@ -149,7 +153,10 @@ def polygon_from_sprite_mask(
                 left_gap = (i - left) % num_points
                 right_gap = (right - i) % num_points
                 weight_right = left_gap / (left_gap + right_gap)
-                radii[i] = best_distance[left] * (1.0 - weight_right) + best_distance[right] * weight_right
+                radii[i] = (
+                    best_distance[left] * (1.0 - weight_right)
+                    + best_distance[right] * weight_right
+                )
         # else: no sector has any data (every outline point sat exactly on
         # the centroid, e.g. a 1x1 opaque surface) - radius stays 0.0.
 
@@ -157,7 +164,9 @@ def polygon_from_sprite_mask(
     for i in range(num_points):
         angle = i * sector_width
         radius = max(0.0, radii[i] + offset)
-        points.append(centroid + pygame.Vector2(math.cos(angle), math.sin(angle)) * radius)
+        points.append(
+            centroid + pygame.Vector2(math.cos(angle), math.sin(angle)) * radius
+        )
 
     return Polygon(points=tuple(points))
 

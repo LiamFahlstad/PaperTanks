@@ -72,7 +72,9 @@ class Rectangle(Shape):
 
     @classmethod
     def from_rect(cls, rect: pygame.Rect) -> "Rectangle":
-        return cls(topleft=pygame.Vector2(rect.topleft), width=rect.width, height=rect.height)
+        return cls(
+            topleft=pygame.Vector2(rect.topleft), width=rect.width, height=rect.height
+        )
 
 
 @dataclass(frozen=True)

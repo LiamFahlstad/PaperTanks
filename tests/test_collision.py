@@ -20,6 +20,7 @@ def make_tank(x: float) -> Tank:
 
 # --- circle_vs_rect ---------------------------------------------------------
 
+
 def test_circle_vs_rect_overlap_center_inside():
     rect = pygame.Rect(0, 0, 20, 20)
     assert collision.circle_vs_rect(pygame.Vector2(10, 10), 1.0, rect) is True
@@ -49,6 +50,7 @@ def test_circle_vs_rect_corner_case_diagonal_miss():
 
 
 # --- circle_vs_polygon -------------------------------------------------------
+
 
 def _square(cx: float, cy: float, half: float) -> tuple[pygame.Vector2, ...]:
     return (
@@ -94,16 +96,24 @@ def test_circle_vs_polygon_concave_shape():
 
 
 def test_circle_vs_polygon_degenerate_fewer_than_three_points():
-    assert collision.circle_vs_polygon(pygame.Vector2(0, 0), 5.0, (pygame.Vector2(0, 0), pygame.Vector2(1, 1))) is False
+    assert (
+        collision.circle_vs_polygon(
+            pygame.Vector2(0, 0), 5.0, (pygame.Vector2(0, 0), pygame.Vector2(1, 1))
+        )
+        is False
+    )
 
 
 # --- sweep_projectile: tunneling ------------------------------------------
+
 
 def test_sweep_projectile_ground_hit():
     terrain = Terrain(ground_y=500.0)
     old_pos = pygame.Vector2(100, 490)
     new_pos = pygame.Vector2(100, 505)
-    result = collision.sweep_projectile(old_pos, new_pos, radius=5.0, terrain=terrain, tanks=[], owner_index=0)
+    result = collision.sweep_projectile(
+        old_pos, new_pos, radius=5.0, terrain=terrain, tanks=[], owner_index=0
+    )
     assert result is not None
     assert result.kind == "ground"
 
@@ -113,7 +123,9 @@ def test_sweep_projectile_skips_owner_tank():
     tank = make_tank(x=300.0)
     old_pos = pygame.Vector2(tank.rect(terrain).centerx, tank.rect(terrain).centery)
     new_pos = pygame.Vector2(old_pos)
-    result = collision.sweep_projectile(old_pos, new_pos, radius=2.0, terrain=terrain, tanks=[tank], owner_index=0)
+    result = collision.sweep_projectile(
+        old_pos, new_pos, radius=2.0, terrain=terrain, tanks=[tank], owner_index=0
+    )
     assert result is None  # owner tank is never hit by its own shot
 
 
@@ -154,5 +166,7 @@ def test_sweep_projectile_no_hit_when_path_clears_tank():
     old_pos = pygame.Vector2(rect.left - 500.0, rect.top - 500.0)
     new_pos = pygame.Vector2(rect.right + 500.0, rect.top - 500.0)
 
-    result = collision.sweep_projectile(old_pos, new_pos, radius=5.0, terrain=terrain, tanks=[tank], owner_index=1)
+    result = collision.sweep_projectile(
+        old_pos, new_pos, radius=5.0, terrain=terrain, tanks=[tank], owner_index=1
+    )
     assert result is None
