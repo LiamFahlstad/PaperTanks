@@ -1,7 +1,10 @@
 """Collision geometry tests.
 
-Only axis-aligned rectangles and circles are used - no polygon collision
-or physics engine. With at most two tanks and a handful of live
+Only axis-aligned rectangles and circles are narrow-phase tested here -
+no polygon collision or physics engine. entities.py's Shape hierarchy
+also defines a Polygon type, but it's an unused data-shape seam (no
+entity constructs one, no narrow-phase test exists for it); see
+Polygon's docstring. With at most two tanks and a handful of live
 projectiles, a broad phase (spatial hashing/grid) would add complexity
 without measurable benefit, so every projectile is narrow-phase tested
 directly against the terrain and each tank each step.

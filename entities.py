@@ -6,12 +6,19 @@ rules live in world.py, collision tests live in collision.py, and
 drawing lives in render.py - keeping "what an object is" separate from
 "what happens to it" and "how it looks".
 
-WorldObject/CollisionBody/RigidBody form a small ABC hierarchy (each
-carries zero stored fields - see WorldObject's docstring for why) that
+WorldObject/CollisionBody/RigidBody form a small ABC hierarchy that
 groups entities by capability: does it exist and draw (WorldObject),
 does it have a solid shape (CollisionBody), is it physics-integrated
 (RigidBody). It's a seam for future entity types, not something the
-current four classes need to function.
+current four classes need to function. WorldObject carries exactly one
+stored field, sprite_key (see its docstring for why that one field is
+an exception to "no shared state").
+
+Shape/Circle/Rectangle/Polygon form a second, unrelated small
+hierarchy: the geometry types collision_shape() can return. Like the
+WorldObject family, Shape itself carries no fields or behavior - it's
+a nominal-typing seam, not a place for shared geometry math (that stays
+in collision.py, dispatched by concrete type).
 """
 
 from __future__ import annotations
@@ -26,24 +33,92 @@ import pygame
 import config
 
 
+class Shape:
+    """Common base for the game's collision-shape geometry types.
+
+    No stored fields or behavior of its own, same reasoning as
+    WorldObject below: it exists so CollisionBody.collision_shape() can
+    have one return type ("some Shape") instead of a widening union,
+    not to host shared geometry logic. Narrow-phase overlap tests
+    (circle_vs_rect, etc.) stay in collision.py, dispatched by concrete
+    type - this hierarchy has no method of its own for that, the same
+    way collision_shape() itself has no current polymorphic caller
+    (see CollisionBody's docstring).
+    """
+
+
 @dataclass(frozen=True)
-class Circle:
+class Circle(Shape):
     """A circular collision shape - pygame has no built-in circle type."""
 
     center: pygame.Vector2
     radius: float
 
 
+@dataclass(frozen=True)
+class Rectangle(Shape):
+    """An axis-aligned rectangular collision shape.
+
+    Wraps the same geometry Tank.rect() already returns as a raw
+    pygame.Rect, as an explicit Circle-style value type (a Vector2 plus
+    scalar dimensions) rather than wrapping pygame.Rect directly, so
+    every Shape subclass has the same "plain, frozen, geometry-only"
+    shape. Tank.rect() itself is unchanged and still returns
+    pygame.Rect - collision.py keeps calling that directly (see
+    CollisionBody's docstring for why); this type is what
+    Tank.collision_shape() returns instead.
+    """
+
+    topleft: pygame.Vector2
+    width: float
+    height: float
+
+    @classmethod
+    def from_rect(cls, rect: pygame.Rect) -> "Rectangle":
+        return cls(topleft=pygame.Vector2(rect.topleft), width=rect.width, height=rect.height)
+
+
+@dataclass(frozen=True)
+class Polygon(Shape):
+    """A closed polygon collision shape defined by its vertices.
+
+    Added as a data-shape seam ahead of concrete need - the same
+    judgment call ARCHITECTURE.md documents for the WorldObject
+    hierarchy itself - not because any current entity needs polygonal
+    collision. No entity constructs one, and collision.py has no
+    polygon narrow-phase test (no polygon-vs-circle/rect function);
+    collision.py's module docstring still accurately states only
+    rectangles and circles are tested today. Add the narrow-phase math
+    only once a concrete entity needs it.
+    """
+
+    points: tuple[pygame.Vector2, ...]
+
+
+@dataclass(kw_only=True)
 class WorldObject(ABC):
     """Base for anything that exists in the game world and is drawn.
 
-    No stored fields: position representation differs per entity (Tank
-    is terrain-relative; Projectile/Explosion store a free Vector2), so
-    the shared contract is "is a kind of thing," not shared state.
-    render.py still dispatches on concrete type for now - this exists
-    so future entities/renderer code can reason about "things in the
-    world" as one family without every entity forcing the same layout.
+    Carries exactly one stored field, sprite_key: an optional lookup
+    key (Sprites/{key}.png) render.py uses to sprite-render this object
+    instead of its primitive-shape fallback (colored rect/circle).
+    Every other kind of state stays off this base - position
+    representation still differs per entity (Tank is terrain-relative;
+    Projectile/Explosion store a free Vector2), so a shared *position*
+    field is still rejected for the same reason as before. sprite_key
+    is different: its type and meaning (Optional[str], "None means use
+    the primitive fallback") are identical for every entity, so hanging
+    it here lets any WorldObject opt in without redeclaring the field
+    or widening collision/layout code, which never looks at it.
+
+    Subclasses use @dataclass(kw_only=True) too (matching this class),
+    which sidesteps the dataclass field-ordering trap of a base-class
+    field landing before a subclass's own required fields - every call
+    site in this codebase already constructs entities with keyword
+    arguments, so this costs nothing at the call sites.
     """
+
+    sprite_key: Optional[str] = None
 
 
 class CollisionBody(WorldObject, ABC):
@@ -59,7 +134,7 @@ class CollisionBody(WorldObject, ABC):
     """
 
     @abstractmethod
-    def collision_shape(self, terrain: "Terrain") -> "pygame.Rect | Circle":
+    def collision_shape(self, terrain: "Terrain") -> Shape:
         ...
 
 
@@ -87,7 +162,7 @@ class Terrain:
         return self.ground_y
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Tank(CollisionBody):
     x: float
     facing: int  # +1 faces right, -1 faces left
@@ -97,7 +172,8 @@ class Tank(CollisionBody):
     power: float = config.TANK_POWER_START
     reload_timer: float = 0.0
     alive: bool = True
-    sprite_key: Optional[str] = None  # looked up as Sprites/{key}.png by render.py; None falls back to a colored rect
+    # sprite_key is inherited from WorldObject; kept opt-in per Tank via the
+    # same constructor kwarg as before (e.g. Tank(..., sprite_key="tank1")).
 
     def rect(self, terrain: Terrain) -> pygame.Rect:
         """Axis-aligned solid body used for collision and drawing."""
@@ -105,8 +181,8 @@ class Tank(CollisionBody):
         rect.midbottom = (round(self.x), round(terrain.height_at(self.x)))
         return rect
 
-    def collision_shape(self, terrain: Terrain) -> pygame.Rect:
-        return self.rect(terrain)
+    def collision_shape(self, terrain: Terrain) -> Rectangle:
+        return Rectangle.from_rect(self.rect(terrain))
 
     def aim_direction(self) -> pygame.Vector2:
         angle_rad = math.radians(self.aim_deg)
@@ -119,7 +195,7 @@ class Tank(CollisionBody):
         return origin + self.aim_direction() * config.TANK_BARREL_LENGTH
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Projectile(RigidBody):
     position: pygame.Vector2
     velocity: pygame.Vector2
@@ -139,7 +215,7 @@ class Projectile(RigidBody):
         return Circle(self.position, self.radius)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Explosion(WorldObject):
     """Purely cosmetic hit feedback; carries no gameplay weight and no
     collision shape - it's a WorldObject, not a CollisionBody, so the

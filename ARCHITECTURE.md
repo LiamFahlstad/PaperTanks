@@ -83,20 +83,54 @@ as an implicit consequence of `world.py` never checking it. `Terrain`
 sits outside the hierarchy entirely: it's a singleton environment
 object with a height-function shape, not a "body."
 
-The base classes carry **zero stored fields** — only an abstract
-`collision_shape()` query — because `Tank`'s position isn't a stored
-`Vector2` the way `Projectile`'s and `Explosion`'s are (it's derived
-from `terrain.height_at(x)` on demand), so a shared stored-position
-base would force a redundant, sync-prone field onto `Tank`. Nominal
-typing without shared state avoids that.
+The base classes carry **one stored field**, not zero: `WorldObject`
+declares `sprite_key: Optional[str] = None`, the same field `Tank`
+alone used to own. It moved up because its type and meaning are
+identical for every entity ("an optional lookup key; `None` means fall
+back to primitive-shape drawing") — unlike position, where `Tank`'s
+`x` is terrain-relative and derived on demand while `Projectile`'s and
+`Explosion`'s `position` is a stored free `Vector2`, so a shared
+stored-*position* field is still rejected for exactly the original
+reason (it would force a redundant, sync-prone field onto `Tank`).
+`sprite_key` has no such mismatch, so hanging it on `WorldObject` lets
+any entity opt into sprite rendering without redeclaring the field or
+affecting collision/layout code, which never reads it.
+
+This did revive the classic dataclass field-ordering problem: a
+base-class field with a default (`sprite_key`) would otherwise have to
+land *before* a subclass's required fields (`Tank.x`, `.facing`,
+`.color`) in the generated `__init__`, which Python rejects. The fix is
+`@dataclass(kw_only=True)` on `WorldObject` and on every concrete
+subclass (`Tank`, `Projectile`, `Explosion`) — keyword-only fields have
+no positional ordering constraint regardless of MRO position. This was
+free: every constructor call site in the codebase already used keyword
+arguments, so no call site changed. The alternative considered was a
+separate opt-in mixin dataclass (composed into only the entities that
+want it) instead of a field on `WorldObject` itself; `WorldObject` was
+chosen because its own docstring already scopes it to "anything that
+exists *and is drawn*," which is precisely sprite rendering's concern,
+so a second parallel type added no clarity.
+
+`Shape`/`Circle`/`Rectangle`/`Polygon` are a second, unrelated small
+hierarchy — the geometry types `collision_shape()` can return. `Circle`
+existed already; `Rectangle` is new (wrapping the same geometry
+`Tank.rect()` already returns as a raw `pygame.Rect`, as an explicit
+`topleft`/`width`/`height` value type so every `Shape` has the same
+plain-frozen-dataclass shape as `Circle`), and `Polygon` (`points:
+tuple[Vector2, ...]`) is new and currently unused — see §5. `Shape`
+itself, like `WorldObject`, carries zero fields; it exists only so
+`CollisionBody.collision_shape()` has one return type to declare.
 
 This hierarchy has no current polymorphic caller — `World` still holds
 three separate concrete lists, and `collision.py` still calls
 `tank.rect(terrain)` directly rather than going through
-`collision_shape()`, to avoid two ways of fetching the same geometry.
-It exists as a deliberately-early seam for entity types and sprite
-rendering the project intends to add, not because today's four classes
-need it — see §10 for how this squares with "earn abstractions."
+`collision_shape()` (which now returns `Rectangle`, a different type
+than `rect()`'s `pygame.Rect` — an intentional two-representations
+situation, not an oversight; see `CollisionBody`'s docstring), to avoid
+two ways of fetching the same geometry. It exists as a deliberately-
+early seam for entity types and sprite rendering the project intends
+to add, not because today's four classes need it — see §10 for how
+this squares with "earn abstractions."
 
 ## 3. The game loop: fixed timestep with interpolation
 
@@ -187,11 +221,19 @@ required.
 
 ## 5. Collision model
 
-Two shape types only: axis-aligned rectangles (tank bodies) and a
-circle (the projectile). No polygons, no physics-engine integration —
+Two shape types are narrow-phase tested: axis-aligned rectangles (tank
+bodies) and a circle (the projectile). No physics-engine integration —
 `collision.py`'s docstring states this explicitly as a scope decision,
 not an oversight, because the shapes in this game don't need anything
 richer.
+
+`entities.py` does also define a `Polygon` shape (`points: tuple[Vector2,
+...]`) alongside `Circle` and the newer `Rectangle`, under a common
+`Shape` base — but it's a data-shape seam only: no entity constructs a
+`Polygon`, and there is no `polygon_vs_*` narrow-phase test here, same
+as `collision_shape()` itself has no current polymorphic caller (§2).
+Add the narrow-phase math only once a concrete entity needs polygonal
+collision, not before.
 
 ```python
 def circle_vs_rect(center, radius, rect) -> bool
@@ -348,8 +390,12 @@ explicitly so future changes can stay consistent with them:
   The `WorldObject`/`CollisionBody`/`RigidBody` ABC hierarchy (§2) is
   compatible with this: it adds typed *structure* (what kind of thing
   is this, does it have a shape, is it physics-driven), not stored
-  state or behavior — each base class has zero fields, and the one
-  method it requires is a query, same category as `rect()`.
+  state or behavior — `CollisionBody`/`RigidBody` add zero fields, and
+  the one method `CollisionBody` requires is a query, same category as
+  `rect()`. `WorldObject` carries one field (`sprite_key`) rather than
+  zero; §2 explains why that specific field, and only that field, was
+  judged safe to share (its type/meaning are uniform across every
+  entity, unlike position).
 - **Earn abstractions, don't pre-build them — mostly.** There's no
   ECS, no event bus, no service locator, no broad-phase collision
   structure — each was considered and explicitly deferred until the

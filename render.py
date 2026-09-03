@@ -14,7 +14,7 @@ from typing import Dict, Optional, Tuple
 import pygame
 
 import config
-from entities import Explosion, Projectile, Tank
+from entities import Explosion, Projectile, Tank, WorldObject
 from world import GameState, World
 
 
@@ -23,9 +23,14 @@ class Renderer:
         pygame.font.init()
         self._font = pygame.font.SysFont(None, 24)
         self._big_font = pygame.font.SysFont(None, 48)
-        # Keyed by (sprite_key, facing) since a tank's sprite is flipped once
-        # for its facing and then reused every frame rather than re-scaled
-        # and re-flipped each draw call.
+        # Generic sprite cache, keyed by (sprite_key, size). Shared by any
+        # WorldObject that carries a sprite_key (Tank, Projectile, ...) -
+        # this class has no idea which concrete entity type it's caching for.
+        self._sprites: Dict[Tuple[str, Tuple[int, int]], pygame.Surface] = {}
+        # Tank-specific: a base sprite additionally flipped per facing.
+        # Facing (which side of the arena a tank points) is a Tank-only
+        # concept, so the flip step and its own (sprite_key, facing) cache
+        # live here rather than in the generic _get_sprite above.
         self._tank_sprites: Dict[Tuple[str, int], pygame.Surface] = {}
 
     def draw(self, screen: pygame.Surface, world: World, alpha: float) -> None:
@@ -66,13 +71,35 @@ class Renderer:
 
         self._draw_hp_bar(screen, rect, tank)
 
-    def _get_tank_sprite(self, tank: Tank) -> Optional[pygame.Surface]:
-        """Load, scale to TANK_WIDTH/HEIGHT and cache a tank's sprite.
+    def _get_sprite(self, obj: WorldObject, size: Tuple[int, int]) -> Optional[pygame.Surface]:
+        """Load, scale to `size` and cache obj.sprite_key's image.
 
-        Returns None when the tank has no sprite_key, so _draw_tank can
-        fall back to the plain colored rect - sprites are opt-in per
-        tank, not a requirement of the CollisionBody/rect-based
-        collision and layout code, which is unaffected either way.
+        Returns None when obj.sprite_key is None, so the caller can fall
+        back to its own primitive-shape drawing (colored rect/circle) -
+        sprites are opt-in per WorldObject, not a requirement of any
+        entity's collision/layout code, which never looks at sprite_key.
+        This method is generic over WorldObject; it has no idea which
+        concrete entity type (Tank, Projectile, ...) it's called for.
+        """
+        sprite_key = obj.sprite_key
+        if sprite_key is None:
+            return None
+
+        cache_key = (sprite_key, size)
+        sprite = self._sprites.get(cache_key)
+        if sprite is None:
+            path = os.path.join(config.SPRITE_DIR, f"{sprite_key}.png")
+            raw = pygame.image.load(path).convert_alpha()
+            sprite = pygame.transform.scale(raw, size)
+            self._sprites[cache_key] = sprite
+        return sprite
+
+    def _get_tank_sprite(self, tank: Tank) -> Optional[pygame.Surface]:
+        """A tank's sprite, additionally flipped for facing.
+
+        Layered on top of the generic _get_sprite() rather than
+        reimplementing load/scale/cache, since only the flip step is
+        Tank-specific (facing isn't a concept every WorldObject has).
         """
         if tank.sprite_key is None:
             return None
@@ -80,11 +107,10 @@ class Renderer:
         cache_key = (tank.sprite_key, tank.facing)
         sprite = self._tank_sprites.get(cache_key)
         if sprite is None:
-            path = os.path.join(config.SPRITE_DIR, f"{tank.sprite_key}.png")
-            raw = pygame.image.load(path).convert_alpha()
-            sprite = pygame.transform.scale(raw, (config.TANK_WIDTH, config.TANK_HEIGHT))
-            if tank.facing < 0:
-                sprite = pygame.transform.flip(sprite, True, False)
+            base = self._get_sprite(tank, (config.TANK_WIDTH, config.TANK_HEIGHT))
+            if base is None:
+                return None
+            sprite = pygame.transform.flip(base, True, False) if tank.facing < 0 else base
             self._tank_sprites[cache_key] = sprite
         return sprite
 
@@ -99,9 +125,19 @@ class Renderer:
 
     def _draw_projectile(self, screen: pygame.Surface, proj: Projectile, alpha: float) -> None:
         draw_pos = proj.prev_position.lerp(proj.position, alpha)
-        pygame.draw.circle(screen, config.COLOR_PROJECTILE, (round(draw_pos.x), round(draw_pos.y)), round(proj.radius))
+        diameter = max(1, round(proj.radius * 2))
+        sprite = self._get_sprite(proj, (diameter, diameter))
+        if sprite is not None:
+            rect = sprite.get_rect(center=(round(draw_pos.x), round(draw_pos.y)))
+            screen.blit(sprite, rect.topleft)
+        else:
+            pygame.draw.circle(screen, config.COLOR_PROJECTILE, (round(draw_pos.x), round(draw_pos.y)), round(proj.radius))
 
     def _draw_explosion(self, screen: pygame.Surface, explosion: Explosion) -> None:
+        # Explosion inherits sprite_key (like every WorldObject) but stays
+        # procedural here on purpose: its visual is a growing ring driven by
+        # explosion.progress, which a single static sprite can't represent,
+        # so no _get_sprite() fallback branch is wired in for it.
         radius = config.EXPLOSION_MAX_RADIUS * explosion.progress
         pos = (round(explosion.position.x), round(explosion.position.y))
         pygame.draw.circle(screen, config.COLOR_EXPLOSION, pos, max(1, round(radius)), width=2)
