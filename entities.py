@@ -43,7 +43,7 @@ class WorldObject(ABC):
     """Base for anything that exists in the game world and is drawn.
 
     Carries exactly one stored field, sprite_key: an optional lookup
-    key (Sprites/{key}.png) render.py uses to sprite-render this object
+    key (assets/sprites/{key}.png) render.py uses to sprite-render this object
     instead of its primitive-shape fallback (colored rect/circle).
     Every other kind of state stays off this base - position
     representation still differs per entity (Tank is terrain-relative;

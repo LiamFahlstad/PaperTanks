@@ -19,12 +19,43 @@ system trivial; a future slice can add scaling/letterboxing.
 
 from __future__ import annotations
 
+from typing import Sequence
+
 import pygame
 
 import config
 import controls
 from render import Renderer
-from world import World
+from world import Intent, World
+
+
+def clamp_frame_time(frame_time: float, max_frame_time: float = config.MAX_FRAME_TIME) -> float:
+    """Clamp a real-time frame delta so a long stall (breakpoint, window
+    drag) can't force an unbounded run of catch-up physics steps once
+    execution resumes ("spiral of death")."""
+    return min(frame_time, max_frame_time)
+
+
+def advance_simulation(
+    world: World,
+    accumulator: float,
+    frame_time: float,
+    intents: Sequence[Intent],
+    fixed_dt: float = config.FIXED_DT,
+) -> float:
+    """Advance `world` by as many fixed-size steps as the accumulated time
+    covers, and return the leftover accumulator (always in [0, fixed_dt)).
+
+    Pulled out of Game.run() so the fixed-timestep accumulator pattern -
+    the part that actually determines simulation correctness - can be
+    unit-tested with a plain object and numbers, without a real pygame
+    window, Clock, or event loop.
+    """
+    accumulator += frame_time
+    while accumulator >= fixed_dt:
+        world.step(fixed_dt, intents)
+        accumulator -= fixed_dt
+    return accumulator
 
 
 class Game:
@@ -42,7 +73,7 @@ class Game:
         try:
             while self.running:
                 frame_time = self.clock.tick(config.MAX_RENDER_FPS) / 1000.0
-                frame_time = min(frame_time, config.MAX_FRAME_TIME)
+                frame_time = clamp_frame_time(frame_time)
 
                 self._handle_events()
                 if not self.running:
@@ -51,10 +82,7 @@ class Game:
                 keys_pressed = pygame.key.get_pressed()
                 intents = controls.build_intents(keys_pressed)
 
-                accumulator += frame_time
-                while accumulator >= config.FIXED_DT:
-                    self.world.step(config.FIXED_DT, intents)
-                    accumulator -= config.FIXED_DT
+                accumulator = advance_simulation(self.world, accumulator, frame_time, intents)
 
                 alpha = accumulator / config.FIXED_DT
                 self.renderer.draw(self.screen, self.world, alpha)

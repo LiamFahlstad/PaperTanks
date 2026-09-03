@@ -78,7 +78,21 @@ def get_sprite(sprite_key: str, size: Tuple[int, int]) -> pygame.Surface:
     sprite = _sprites.get(cache_key)
     if sprite is None:
         path = os.path.join(config.SPRITE_DIR, f"{sprite_key}.png")
-        raw = pygame.image.load(path).convert_alpha()
+        raw = pygame.image.load(path)
+        # convert_alpha() needs an initialized pygame.display surface to
+        # match pixel formats against - it's a blit-performance optimization
+        # only, not a correctness requirement (a loaded PNG already carries
+        # its own per-pixel alpha, which is all mask.from_surface() in
+        # sprite_shape.py needs). Tank.collision_shape() reaches this
+        # function from inside World.step() - the core simulation path,
+        # which must stay usable with no window (headless tests, a future
+        # dedicated server, etc.) - so this only converts when a display
+        # actually exists (the real game via game.py's Game.__init__),
+        # and falls back to the unconverted surface otherwise. Production
+        # rendering is unaffected: game.py always initializes the display
+        # before the first draw.
+        if pygame.display.get_surface() is not None:
+            raw = raw.convert_alpha()
         sprite = pygame.transform.scale(raw, size)
         _sprites[cache_key] = sprite
     return sprite

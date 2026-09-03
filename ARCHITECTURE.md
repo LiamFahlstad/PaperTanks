@@ -38,6 +38,13 @@ game.py        the fixed-timestep main loop; wires everything together
 main.py        `python main.py` entry point
 ```
 
+Two sibling directories sit alongside this flat module list without
+becoming part of it: `assets/sprites/` (art, e.g. `tank1.png` -
+`config.SPRITE_DIR`) and `tests/` (see §13). Neither is a reason to
+introduce a `papertanks/` package - they hold assets and tests, not
+importable game code, so the "single flat module list" reasoning above
+is unaffected.
+
 Each module answers exactly one question:
 
 | Module        | Question it answers                                   |
@@ -523,3 +530,50 @@ These are deliberate omissions for this first slice, not oversights:
 Each of these extends an existing seam rather than requiring a
 restructure — which was the point of keeping the modules this narrow
 from the start.
+
+## 13. Tests
+
+`tests/` holds fast, headless pytest tests (`pytest`, discovered via the
+repo-root `pytest.ini`) - no real pygame window or display is opened;
+`tests/conftest.py` forces `SDL_VIDEODRIVER=dummy` defensively before
+anything imports pygame. Coverage is deliberately narrow and focused on
+the properties this document claims elsewhere, not exhaustive:
+
+- `test_physics.py` — `apply_gravity`/`integrate_position` as pure
+  functions, including that they compose as semi-implicit Euler (§4).
+- `test_collision.py` — `circle_vs_rect`/`circle_vs_polygon` (including a
+  concave polygon), and `sweep_projectile`'s tunneling-safe sampling: a
+  projectile fired fast enough to cross an entire tank body within one
+  fixed tick still registers a hit, even though the discrete endpoint
+  alone would miss it (§5, "Tunneling and the sweep" — this is the
+  synthetic test that section refers to).
+- `test_timestep.py` — the accumulator pattern itself (`clamp_frame_time`/
+  `advance_simulation`, factored out of `Game.run()` in `game.py`
+  specifically so this is testable without a real Clock/window): step
+  count per frame_time, the stall-clamp bound, and the `alpha` invariant
+  (leftover accumulator always in `[0, fixed_dt)`).
+- `test_world_smoke.py` — the headless logic smoke test (§10): drives a
+  real `World` through many fixed ticks with no display, checking pause
+  is a true no-op, aim/power clamping, fire cooldown, gravity-driven
+  flight ending in a collision/explosion, the win/draw condition, restart,
+  and that two `World`s given the same seed and input sequence end up in
+  identical states (determinism, §10).
+
+Tank collision testing uses tanks with no `sprite_key` (a plain
+`Rectangle` shape) except where determinism tests exercise the real
+two-tank `World`, which does include the sprite-backed tank — this
+caught a real bug during hardening: `Tank.collision_shape()` (called from
+inside `World.step()`, the core simulation path) reached
+`sprite_cache.get_sprite()`, which called `pygame.image.load(...).
+convert_alpha()` — and `convert_alpha()` raises without an initialized
+`pygame.display` surface. That made `World.step()` non-headless whenever
+a projectile's flight was tested against a sprite-backed tank, silently
+contradicting this document's "simulate first, render second, never mix
+the two" principle (§10) and the "headless logic smoke test" claim.
+Fixed in `sprite_cache.get_sprite()`: `convert_alpha()` now only runs
+when `pygame.display.get_surface()` is not `None` (real game runs via
+`game.py` always have one by the time any sprite loads); a loaded PNG
+already carries its own per-pixel alpha, which is all
+`sprite_shape.polygon_from_sprite_mask()`'s mask extraction needs, so
+skipping the conversion costs nothing but a render-only blit-performance
+optimization when no display exists to blit to anyway.

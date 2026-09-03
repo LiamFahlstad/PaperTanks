@@ -15,6 +15,13 @@ pip install -r requirements.txt
 python main.py
 ```
 
+## Dev
+
+```
+pip install -r requirements-dev.txt
+pytest
+```
+
 ## Controls
 
 | Action           | Player 1 (left)      | Player 2 (right)   |
@@ -36,5 +43,7 @@ Other keys: `P` pause/resume, `R` restart, `Esc` quit.
 - `render.py` — drawing only, no gameplay mutation.
 - `game.py` — main loop (fixed-timestep accumulator).
 - `main.py` — entry point.
+- `assets/sprites/` — sprite art (e.g. `tank1.png`).
+- `tests/` — headless pytest suite (`pytest`).
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design rationale.

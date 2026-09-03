@@ -39,7 +39,7 @@ GRAVITY = 900.0  # px/s^2, downward (positive y)
 GROUND_Y = float(SCREEN_HEIGHT - 80)
 
 # --- Assets --------------------------------------------------------------
-SPRITE_DIR = "Sprites"
+SPRITE_DIR = "assets/sprites"
 
 # --- Sprite-derived collision shapes (sprite_shape.py) --------------------
 # Tunables for polygon_from_sprite_mask(): how many points the generated
@@ -81,6 +81,10 @@ PROJECTILE_DAMAGE = 34
 # This guards against a projectile that somehow never crosses the ground
 # (e.g. future terrain gaps) from living forever.
 PROJECTILE_MAX_LIFETIME = 8.0
+# Also a safety net: how far past either screen edge a projectile may
+# travel before it's despawned as out-of-bounds, rather than living
+# forever off-screen (e.g. a very high-power shot fired near-horizontal).
+PROJECTILE_OFFSCREEN_MARGIN_PX = 50.0
 
 # --- Explosion feedback -------------------------------------------------
 EXPLOSION_DURATION = 0.35  # seconds

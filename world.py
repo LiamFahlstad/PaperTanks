@@ -42,7 +42,16 @@ class Intent:
     fire: bool = False
 
 
-NEUTRAL_INTENTS: List[Intent] = [Intent(), Intent()]
+def _neutral_intents() -> List[Intent]:
+    """Fresh, unheld-key Intents for both tanks.
+
+    Used as World.step()'s default when no intents are supplied (e.g. a
+    paused/headless step). Built fresh per call rather than shared as a
+    module-level mutable list default - Intent is never mutated in place
+    today, but a shared mutable default is a standing footgun for future
+    code that might read-and-modify one, so it's avoided outright.
+    """
+    return [Intent(), Intent()]
 
 
 class World:
@@ -75,9 +84,11 @@ class World:
         if self.state == GameState.PLAYING:
             self.state = GameState.PAUSED
 
-    def step(self, dt: float, intents: Sequence[Intent] = NEUTRAL_INTENTS) -> None:
+    def step(self, dt: float, intents: Optional[Sequence[Intent]] = None) -> None:
         if self.state != GameState.PLAYING:
             return
+        if intents is None:
+            intents = _neutral_intents()
 
         for tank, intent in zip(self.tanks, intents):
             self._apply_intent(tank, intent, dt)
@@ -132,7 +143,8 @@ class World:
                     self._apply_damage(self.tanks[result.tank_index], config.PROJECTILE_DAMAGE)
                 continue  # projectile consumed on impact
 
-            out_of_bounds = new_pos.x < -50 or new_pos.x > config.SCREEN_WIDTH + 50
+            margin = config.PROJECTILE_OFFSCREEN_MARGIN_PX
+            out_of_bounds = new_pos.x < -margin or new_pos.x > config.SCREEN_WIDTH + margin
             if proj.age >= config.PROJECTILE_MAX_LIFETIME or out_of_bounds:
                 continue  # expire silently; safety net, should rarely trigger
 
