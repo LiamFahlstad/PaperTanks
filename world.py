@@ -54,7 +54,7 @@ class World:
         self.rng = random.Random(self._rng_seed)
         self.terrain = Terrain(config.GROUND_Y)
         self.tanks: List[Tank] = [
-            Tank(x=config.TANK1_START_X, facing=1, color=config.COLOR_TANK_1),
+            Tank(x=config.TANK1_START_X, facing=1, color=config.COLOR_TANK_1, sprite_key="tank1"),
             Tank(x=config.TANK2_START_X, facing=-1, color=config.COLOR_TANK_2),
         ]
         self.projectiles: List[Projectile] = []

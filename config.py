@@ -38,6 +38,9 @@ GRAVITY = 900.0  # px/s^2, downward (positive y)
 # touching collision or entity code.
 GROUND_Y = float(SCREEN_HEIGHT - 80)
 
+# --- Assets --------------------------------------------------------------
+SPRITE_DIR = "Sprites"
+
 # --- Tank ---------------------------------------------------------------
 TANK_WIDTH = 56
 TANK_HEIGHT = 28

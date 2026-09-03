@@ -8,6 +8,9 @@ config.PHYSICS_HZ.
 
 from __future__ import annotations
 
+import os
+from typing import Dict, Optional, Tuple
+
 import pygame
 
 import config
@@ -20,6 +23,10 @@ class Renderer:
         pygame.font.init()
         self._font = pygame.font.SysFont(None, 24)
         self._big_font = pygame.font.SysFont(None, 48)
+        # Keyed by (sprite_key, facing) since a tank's sprite is flipped once
+        # for its facing and then reused every frame rather than re-scaled
+        # and re-flipped each draw call.
+        self._tank_sprites: Dict[Tuple[str, int], pygame.Surface] = {}
 
     def draw(self, screen: pygame.Surface, world: World, alpha: float) -> None:
         screen.fill(config.COLOR_BG)
@@ -45,8 +52,12 @@ class Renderer:
 
     def _draw_tank(self, screen: pygame.Surface, world: World, tank: Tank) -> None:
         rect = tank.rect(world.terrain)
-        color = config.COLOR_TANK_DEAD if not tank.alive else tank.color
-        pygame.draw.rect(screen, color, rect)
+        sprite = self._get_tank_sprite(tank) if tank.alive else None
+        if sprite is not None:
+            screen.blit(sprite, rect.topleft)
+        else:
+            color = config.COLOR_TANK_DEAD if not tank.alive else tank.color
+            pygame.draw.rect(screen, color, rect)
 
         if tank.alive:
             muzzle = tank.muzzle_position(world.terrain)
@@ -54,6 +65,28 @@ class Renderer:
             pygame.draw.line(screen, config.COLOR_BARREL, origin, muzzle, width=3)
 
         self._draw_hp_bar(screen, rect, tank)
+
+    def _get_tank_sprite(self, tank: Tank) -> Optional[pygame.Surface]:
+        """Load, scale to TANK_WIDTH/HEIGHT and cache a tank's sprite.
+
+        Returns None when the tank has no sprite_key, so _draw_tank can
+        fall back to the plain colored rect - sprites are opt-in per
+        tank, not a requirement of the CollisionBody/rect-based
+        collision and layout code, which is unaffected either way.
+        """
+        if tank.sprite_key is None:
+            return None
+
+        cache_key = (tank.sprite_key, tank.facing)
+        sprite = self._tank_sprites.get(cache_key)
+        if sprite is None:
+            path = os.path.join(config.SPRITE_DIR, f"{tank.sprite_key}.png")
+            raw = pygame.image.load(path).convert_alpha()
+            sprite = pygame.transform.scale(raw, (config.TANK_WIDTH, config.TANK_HEIGHT))
+            if tank.facing < 0:
+                sprite = pygame.transform.flip(sprite, True, False)
+            self._tank_sprites[cache_key] = sprite
+        return sprite
 
     def _draw_hp_bar(self, screen: pygame.Surface, rect: pygame.Rect, tank: Tank) -> None:
         bar_width = rect.width

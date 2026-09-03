@@ -63,6 +63,41 @@ independently testable and independently replaceable (e.g. controls
 could be swapped for a gamepad, or render swapped for a different
 graphics backend, without touching the other).
 
+### Object hierarchy
+
+`entities.py` also defines a small ABC hierarchy that the four
+concrete classes sit under:
+
+```
+WorldObject        anything that exists and is drawn
+  └─ CollisionBody  + has a solid shape (collision_shape())
+       └─ RigidBody + is physics-integrated (gravity/velocity each tick)
+```
+
+`Tank` is a `CollisionBody` (has a rect shape, but never moves under
+simulated forces — aim/power/reload are direct state changes).
+`Projectile` is a `RigidBody` (a circle shape, integrated by
+`physics.py` each tick). `Explosion` is a bare `WorldObject` — it has
+no collision shape, and the type now states that instead of leaving it
+as an implicit consequence of `world.py` never checking it. `Terrain`
+sits outside the hierarchy entirely: it's a singleton environment
+object with a height-function shape, not a "body."
+
+The base classes carry **zero stored fields** — only an abstract
+`collision_shape()` query — because `Tank`'s position isn't a stored
+`Vector2` the way `Projectile`'s and `Explosion`'s are (it's derived
+from `terrain.height_at(x)` on demand), so a shared stored-position
+base would force a redundant, sync-prone field onto `Tank`. Nominal
+typing without shared state avoids that.
+
+This hierarchy has no current polymorphic caller — `World` still holds
+three separate concrete lists, and `collision.py` still calls
+`tank.rect(terrain)` directly rather than going through
+`collision_shape()`, to avoid two ways of fetching the same geometry.
+It exists as a deliberately-early seam for entity types and sprite
+rendering the project intends to add, not because today's four classes
+need it — see §10 for how this squares with "earn abstractions."
+
 ## 3. The game loop: fixed timestep with interpolation
 
 `game.py` is intentionally the least interesting file in the project —
@@ -306,17 +341,27 @@ explicitly so future changes can stay consistent with them:
   is what makes the simulation independently testable (see the headless
   logic smoke test) without a window or event loop.
 - **Plain data over clever objects.** `entities.py` holds dataclasses
-  with only geometric queries (`rect()`, `muzzle_position()`) — no
-  `update()` methods, no behavior. Behavior lives in exactly one place
-  (`world.py`), so there's never a question of "does this tank update
-  itself, or does something else update it?"
-- **Earn abstractions, don't pre-build them.** There's no ECS, no
-  event bus, no service locator, no broad-phase collision structure —
-  each was considered and explicitly deferred until the entity count or
-  feature set actually demands it (documented inline where the decision
-  was made, e.g. `collision.py`'s broad-phase note). Two tanks and a
-  handful of projectiles don't need an entity-component framework; they
-  need a list.
+  with only geometric queries (`rect()`, `muzzle_position()`,
+  `collision_shape()`) — no `update()` methods, no behavior. Behavior
+  lives in exactly one place (`world.py`), so there's never a question
+  of "does this tank update itself, or does something else update it?"
+  The `WorldObject`/`CollisionBody`/`RigidBody` ABC hierarchy (§2) is
+  compatible with this: it adds typed *structure* (what kind of thing
+  is this, does it have a shape, is it physics-driven), not stored
+  state or behavior — each base class has zero fields, and the one
+  method it requires is a query, same category as `rect()`.
+- **Earn abstractions, don't pre-build them — mostly.** There's no
+  ECS, no event bus, no service locator, no broad-phase collision
+  structure — each was considered and explicitly deferred until the
+  entity count or feature set actually demands it (documented inline
+  where the decision was made, e.g. `collision.py`'s broad-phase note).
+  Two tanks and a handful of projectiles don't need an
+  entity-component framework; they need a list. The one deliberate
+  exception is the object hierarchy in §2: it's built ahead of a
+  concrete need, as a cheap, low-risk seam for the entity types and
+  sprite rendering already planned, rather than left to be retrofitted
+  later — a judgment call made explicitly, not a silent exception to
+  this principle.
 - **Determinism over convenience.** Fixed timestep, a seeded RNG
   (`config.RNG_SEED`), and pure integration functions mean the same
   input sequence always produces the same outcome — essential for
