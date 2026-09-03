@@ -25,12 +25,15 @@ wrapper would only add a directory level with no benefit.
 
 ```
 config.py      constants, tuning values, key bindings, conventions
+shapes.py      collision-shape geometry value-types: Circle, Rectangle, Polygon
 entities.py    plain data: Terrain, Tank, Projectile, Explosion
 physics.py     pure gravity/position integration functions
-collision.py   circle-vs-rect test, tunneling-safe sweep
+collision.py   circle-vs-rect / circle-vs-polygon tests, tunneling-safe sweep
 world.py       simulation rules — the only place gameplay happens
 controls.py    keyboard state -> per-tank Intent
 render.py      draws World state to a Surface; never mutates it
+sprite_cache.py loads/scales/flips/caches sprite Surfaces + their masks
+sprite_shape.py builds a collision Polygon from a sprite's alpha mask
 game.py        the fixed-timestep main loop; wires everything together
 main.py        `python main.py` entry point
 ```
@@ -39,21 +42,28 @@ Each module answers exactly one question:
 
 | Module        | Question it answers                                   |
 |----------------|--------------------------------------------------------|
+| `shapes.py`    | What geometry value-types exist for collision shapes?  |
 | `entities.py`  | What *is* a tank / projectile / terrain?               |
 | `physics.py`   | How does a thing move under gravity?                   |
 | `collision.py` | Are two shapes touching?                               |
 | `world.py`     | What happens each tick, given intents and physics?     |
 | `controls.py`  | Which keys mean "aim up" / "fire" / etc.?               |
 | `render.py`    | How does current state look on screen?                 |
+| `sprite_cache.py` | Which sprite Surface (and its mask) belongs to this key/facing? |
+| `sprite_shape.py` | What collision geometry does this sprite's art actually have? |
 | `game.py`      | In what order do input, simulation and drawing happen? |
 
 The dependency direction is one-way and shallow:
 
 ```
 game.py ──> controls.py ──> world.py ──> physics.py
-   │                            │      └─> collision.py
-   │                            └─────────> entities.py
+   │                            │      └─> collision.py ──> shapes.py
+   │                            └─────────> entities.py ──> shapes.py
+   │                                            │        └─> sprite_cache.py
+   │                                            │              └─> sprite_shape.py
+   │                                            │                    └─> shapes.py
    └──> render.py ──────────────────────> entities.py / world.py (read-only)
+                          └─────────────> sprite_cache.py
 ```
 
 `render.py` and `controls.py` never talk to each other, and neither one
@@ -62,6 +72,40 @@ reaches into `physics.py` or `collision.py` directly — they only see
 independently testable and independently replaceable (e.g. controls
 could be swapped for a gamepad, or render swapped for a different
 graphics backend, without touching the other).
+
+`shapes.py` is the lowest leaf in the graph: it defines
+`Shape`/`Circle`/`Rectangle`/`Polygon` (see §2's "Object hierarchy"
+subsection and §5) with no project-level import of its own beyond
+`pygame`. `sprite_shape.py` depends on it (to construct a `Polygon` from
+a sprite's alpha mask) and nothing else in the project; `sprite_cache.py`
+depends on `shapes.py` (for the `Polygon` type) and `sprite_shape.py`
+(to build one); `entities.py` depends on `shapes.py` (for
+`Tank.collision_shape()`'s return types) and on `sprite_cache.py` (to
+fetch the cached, sprite-mask-derived `Polygon` for a tank with a
+`sprite_key` — see §5); `collision.py` depends on `shapes.py` for the
+same geometry types its narrow-phase tests dispatch on, alongside `Tank`/
+`Terrain` from `entities.py`. Every one of those imports is an ordinary,
+top-level `import` — no `TYPE_CHECKING` guard, no function-local deferred
+import anywhere in this graph, because there is no cycle to route around:
+none of `shapes.py`, `sprite_shape.py`, or `sprite_cache.py` imports
+`entities.py`, `world.py`, or `render.py`. `render.py` separately calls
+`sprite_cache.py` directly (to load/scale/flip/cache sprite `Surface`s
+for drawing) — a second, independent edge into the same leaf, not a path
+back up from `sprite_cache.py` toward `render.py`.
+
+This is a correction of an earlier structure, worth calling out
+explicitly: `Shape`/`Circle`/`Rectangle`/`Polygon` used to live inside
+`entities.py` itself. That forced `sprite_shape.py` — a module with no
+business knowing about tanks, terrain, or the game world — to import
+`entities.py` just to construct a `Polygon`, which in turn meant
+`entities.py`'s own (real, needed) dependency on `sprite_cache.py` closed
+a three-module import cycle (`entities.py -> sprite_cache.py ->
+sprite_shape.py -> entities.py`). The fix was not to route around the
+cycle (a `TYPE_CHECKING`-only import plus a deferred, function-local
+import were tried and rejected) but to remove its cause: the geometry
+types were never actually about tanks/terrain/entities, so they moved to
+their own leaf module. See `shapes.py`'s module docstring for the full
+reasoning.
 
 ### Object hierarchy
 
@@ -74,8 +118,9 @@ WorldObject        anything that exists and is drawn
        └─ RigidBody + is physics-integrated (gravity/velocity each tick)
 ```
 
-`Tank` is a `CollisionBody` (has a rect shape, but never moves under
-simulated forces — aim/power/reload are direct state changes).
+`Tank` is a `CollisionBody` (has a rect or sprite-derived polygon shape,
+see §5, but never moves under simulated forces — aim/power/reload are
+direct state changes).
 `Projectile` is a `RigidBody` (a circle shape, integrated by
 `physics.py` each tick). `Explosion` is a bare `WorldObject` — it has
 no collision shape, and the type now states that instead of leaving it
@@ -112,25 +157,32 @@ exists *and is drawn*," which is precisely sprite rendering's concern,
 so a second parallel type added no clarity.
 
 `Shape`/`Circle`/`Rectangle`/`Polygon` are a second, unrelated small
-hierarchy — the geometry types `collision_shape()` can return. `Circle`
-existed already; `Rectangle` is new (wrapping the same geometry
-`Tank.rect()` already returns as a raw `pygame.Rect`, as an explicit
+hierarchy — the geometry types `collision_shape()` can return — and
+because they're genuinely unrelated to "what is a tank/projectile/
+terrain," they live in their own module, `shapes.py`, not in
+`entities.py` (see this section's dependency-graph discussion above for
+why that separation is what keeps the import graph acyclic). `Circle`
+existed already; `Rectangle` wraps the same geometry `Tank.rect()`
+already returns as a raw `pygame.Rect`, as an explicit
 `topleft`/`width`/`height` value type so every `Shape` has the same
-plain-frozen-dataclass shape as `Circle`), and `Polygon` (`points:
-tuple[Vector2, ...]`) is new and currently unused — see §5. `Shape`
-itself, like `WorldObject`, carries zero fields; it exists only so
-`CollisionBody.collision_shape()` has one return type to declare.
+plain-frozen-dataclass shape as `Circle`. `Polygon` (`points:
+tuple[Vector2, ...]`) is now in active use for tanks with sprite art —
+see §5. `Shape` itself, like `WorldObject`, carries zero fields; it
+exists only so `CollisionBody.collision_shape()` (`entities.py`) has one
+return type to declare.
 
-This hierarchy has no current polymorphic caller — `World` still holds
-three separate concrete lists, and `collision.py` still calls
-`tank.rect(terrain)` directly rather than going through
-`collision_shape()` (which now returns `Rectangle`, a different type
-than `rect()`'s `pygame.Rect` — an intentional two-representations
-situation, not an oversight; see `CollisionBody`'s docstring), to avoid
-two ways of fetching the same geometry. It exists as a deliberately-
-early seam for entity types and sprite rendering the project intends
-to add, not because today's four classes need it — see §10 for how
-this squares with "earn abstractions."
+This hierarchy now has a polymorphic caller: `collision.py`'s
+`sweep_projectile()` calls `tank.collision_shape(terrain)` for every
+tank (instead of reading `tank.rect(terrain)` directly, which it used to
+do specifically to avoid two ways of fetching the same geometry — see
+`CollisionBody`'s docstring for how that tension was resolved) and
+dispatches on whichever concrete `Shape` comes back — a sprite-derived
+`Polygon` for a tank with real art (only `"tank1"` today), or `Rectangle`
+for a tank with no `sprite_key`. `World` still holds three separate
+concrete lists; that part of the "no polymorphic caller" story is
+unchanged. What was a deliberately-early seam for entity types and
+sprite rendering (see §10, "earn abstractions") is, for `Polygon`
+specifically, no longer ahead of need.
 
 ## 3. The game loop: fixed timestep with interpolation
 
@@ -221,27 +273,45 @@ required.
 
 ## 5. Collision model
 
-Two shape types are narrow-phase tested: axis-aligned rectangles (tank
-bodies) and a circle (the projectile). No physics-engine integration —
-`collision.py`'s docstring states this explicitly as a scope decision,
-not an oversight, because the shapes in this game don't need anything
-richer.
+Three shape types are narrow-phase tested: circles (the projectile),
+axis-aligned rectangles, and simple polygons, convex or concave but
+non-self-intersecting (a sprite-backed tank's silhouette). Still no
+physics-engine integration — `collision.py`'s docstring states this
+explicitly as a scope decision, not an oversight, because the shapes in
+this game don't need anything richer.
 
-`entities.py` does also define a `Polygon` shape (`points: tuple[Vector2,
-...]`) alongside `Circle` and the newer `Rectangle`, under a common
-`Shape` base — but it's a data-shape seam only: no entity constructs a
-`Polygon`, and there is no `polygon_vs_*` narrow-phase test here, same
-as `collision_shape()` itself has no current polymorphic caller (§2).
-Add the narrow-phase math only once a concrete entity needs polygonal
-collision, not before.
+`shapes.py` defines a `Polygon` shape (`points: tuple[Vector2, ...]`)
+alongside `Circle` and `Rectangle`, under a common `Shape` base. It
+started as a data-shape seam with no constructor and no narrow-phase
+test (see git history / earlier drafts of this doc); both now exist:
+`sprite_shape.polygon_from_sprite_mask()` builds a `Polygon` from a
+sprite's alpha-mask silhouette (a low-res, centroid-relative outline,
+optionally shrunk/expanded — see the module docstring for the angle-
+bucketing and empty-sector-interpolation rules), `sprite_cache.py`
+caches one per `(sprite_key, facing)` and hands it to
+`Tank.collision_shape()` (translated to world space), and
+`circle_vs_polygon()` in `collision.py` is the matching narrow-phase
+test, called from `sweep_projectile()` for any tank whose
+`collision_shape()` returns a `Polygon`. A `Tank` with no `sprite_key`
+(no art to derive a silhouette from) still returns `Rectangle`, tested
+by the pre-existing `circle_vs_rect()`.
 
 ```python
 def circle_vs_rect(center, radius, rect) -> bool
+def circle_vs_polygon(center, radius, points) -> bool
 ```
 
-Standard closest-point test: clamp the circle's center into the rect's
-bounds, measure the distance from that clamped point to the center, and
-compare against the radius.
+`circle_vs_rect` is a standard closest-point test: clamp the circle's
+center into the rect's bounds, measure the distance from that clamped
+point to the center, and compare against the radius.
+
+`circle_vs_polygon` handles polygons that aren't guaranteed convex
+(sprite-derived shapes can have concave "shoulder" corners, e.g. a
+turret narrower than the hull beneath it), so it can't shortcut to a
+convex-only test: it checks whether the circle's center is inside the
+polygon (even-odd ray cast) *or* whether any edge segment's closest
+point to the center is within the radius — either condition alone is
+correct for a possibly-concave, non-self-intersecting polygon.
 
 ### Tunneling and the sweep
 

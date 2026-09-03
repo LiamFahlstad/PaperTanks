@@ -14,11 +14,14 @@ current four classes need to function. WorldObject carries exactly one
 stored field, sprite_key (see its docstring for why that one field is
 an exception to "no shared state").
 
-Shape/Circle/Rectangle/Polygon form a second, unrelated small
-hierarchy: the geometry types collision_shape() can return. Like the
-WorldObject family, Shape itself carries no fields or behavior - it's
-a nominal-typing seam, not a place for shared geometry math (that stays
-in collision.py, dispatched by concrete type).
+The Shape/Circle/Rectangle/Polygon geometry-value-type hierarchy - the
+types collision_shape() below can return - lives in shapes.py, not here,
+because it's genuinely unrelated to "what is a tank/projectile/terrain":
+it has no notion of tanks, terrain, or the game world, only points and
+radii. Keeping it in a separate leaf module (rather than bundled into
+this one) is also what lets sprite_shape.py/sprite_cache.py depend on the
+Shape types without depending on entities.py - see shapes.py's module
+docstring for the full reasoning.
 """
 
 from __future__ import annotations
@@ -31,68 +34,8 @@ from typing import Optional
 import pygame
 
 import config
-
-
-class Shape:
-    """Common base for the game's collision-shape geometry types.
-
-    No stored fields or behavior of its own, same reasoning as
-    WorldObject below: it exists so CollisionBody.collision_shape() can
-    have one return type ("some Shape") instead of a widening union,
-    not to host shared geometry logic. Narrow-phase overlap tests
-    (circle_vs_rect, etc.) stay in collision.py, dispatched by concrete
-    type - this hierarchy has no method of its own for that, the same
-    way collision_shape() itself has no current polymorphic caller
-    (see CollisionBody's docstring).
-    """
-
-
-@dataclass(frozen=True)
-class Circle(Shape):
-    """A circular collision shape - pygame has no built-in circle type."""
-
-    center: pygame.Vector2
-    radius: float
-
-
-@dataclass(frozen=True)
-class Rectangle(Shape):
-    """An axis-aligned rectangular collision shape.
-
-    Wraps the same geometry Tank.rect() already returns as a raw
-    pygame.Rect, as an explicit Circle-style value type (a Vector2 plus
-    scalar dimensions) rather than wrapping pygame.Rect directly, so
-    every Shape subclass has the same "plain, frozen, geometry-only"
-    shape. Tank.rect() itself is unchanged and still returns
-    pygame.Rect - collision.py keeps calling that directly (see
-    CollisionBody's docstring for why); this type is what
-    Tank.collision_shape() returns instead.
-    """
-
-    topleft: pygame.Vector2
-    width: float
-    height: float
-
-    @classmethod
-    def from_rect(cls, rect: pygame.Rect) -> "Rectangle":
-        return cls(topleft=pygame.Vector2(rect.topleft), width=rect.width, height=rect.height)
-
-
-@dataclass(frozen=True)
-class Polygon(Shape):
-    """A closed polygon collision shape defined by its vertices.
-
-    Added as a data-shape seam ahead of concrete need - the same
-    judgment call ARCHITECTURE.md documents for the WorldObject
-    hierarchy itself - not because any current entity needs polygonal
-    collision. No entity constructs one, and collision.py has no
-    polygon narrow-phase test (no polygon-vs-circle/rect function);
-    collision.py's module docstring still accurately states only
-    rectangles and circles are tested today. Add the narrow-phase math
-    only once a concrete entity needs it.
-    """
-
-    points: tuple[pygame.Vector2, ...]
+import sprite_cache
+from shapes import Circle, Polygon, Rectangle, Shape
 
 
 @dataclass(kw_only=True)
@@ -126,11 +69,14 @@ class CollisionBody(WorldObject, ABC):
 
     collision_shape() is a query, not behavior (same category as the
     existing rect()/muzzle_position()) - the overlap math itself stays
-    in collision.py. Currently only Tank's rect() feeds
-    sweep_projectile directly (kept as-is, to avoid two ways to fetch
-    the same geometry); collision_shape() is the seam a second
-    collision body type or a generic collision loop will use once one
-    exists.
+    in collision.py, dispatched by concrete Shape type. sweep_projectile()
+    now calls this directly for every tank instead of tank.rect() - the
+    "two ways to fetch the same geometry" tension this docstring used to
+    flag is resolved by consolidating on collision_shape() as the single
+    source, now that a second concrete Shape (Polygon, from Tank's
+    sprite art) actually exists. tank.rect() is unchanged and still used
+    for rendering/positioning/muzzle math; it's just no longer read
+    directly for collision.
     """
 
     @abstractmethod
@@ -181,8 +127,35 @@ class Tank(CollisionBody):
         rect.midbottom = (round(self.x), round(terrain.height_at(self.x)))
         return rect
 
-    def collision_shape(self, terrain: Terrain) -> Rectangle:
-        return Rectangle.from_rect(self.rect(terrain))
+    def collision_shape(self, terrain: Terrain) -> Shape:
+        """Solid shape used for collision testing (see CollisionBody).
+
+        Returns a world-space Polygon derived from this tank's sprite
+        silhouette when sprite_key is set - a low-res polygon that hugs
+        the actual painted tank shape (see sprite_shape.py) instead of
+        its full bounding rect, so a shot that visually grazes empty
+        (transparent) art near a corner doesn't register a hit. Falls
+        back to the plain bounding Rectangle when sprite_key is None
+        (only "tank1" has real art today; a tank with no sprite has no
+        silhouette to derive one from). This is why the return type is
+        the generic Shape rather than Rectangle: which concrete Shape a
+        given Tank returns depends on whether it has art.
+
+        sprite_cache.get_tank_collision_polygon() is imported at module
+        top, same as any other dependency - there's no cycle to route
+        around here: sprite_cache.py and sprite_shape.py both depend on
+        shapes.py for Polygon, not on this module, so entities.py can
+        depend on sprite_cache.py in the ordinary one-way direction (see
+        shapes.py's module docstring). The underlying Polygon is cached
+        inside sprite_cache (see its docstring), so this method is a cheap
+        cache hit after the first call per (sprite_key, facing).
+        """
+        if self.sprite_key is None:
+            return Rectangle.from_rect(self.rect(terrain))
+
+        local_polygon = sprite_cache.get_tank_collision_polygon(self.sprite_key, self.facing)
+        origin = pygame.Vector2(self.rect(terrain).topleft)
+        return Polygon(points=tuple(origin + point for point in local_polygon.points))
 
     def aim_direction(self) -> pygame.Vector2:
         angle_rad = math.radians(self.aim_deg)

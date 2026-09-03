@@ -41,6 +41,19 @@ GROUND_Y = float(SCREEN_HEIGHT - 80)
 # --- Assets --------------------------------------------------------------
 SPRITE_DIR = "Sprites"
 
+# --- Sprite-derived collision shapes (sprite_shape.py) --------------------
+# Tunables for polygon_from_sprite_mask(): how many points the generated
+# collision polygon has, and how far each point is nudged inward/outward
+# along its own centroid-to-point ray. Wired in via sprite_cache.py's
+# per-(sprite_key, facing) cache into Tank.collision_shape() (entities.py),
+# which returns a shapes.Polygon for any tank with a sprite_key.
+SPRITE_SHAPE_POINTS = 12
+# Negative = shrink inward (the default). Collision shapes are
+# conventionally drawn slightly smaller than the sprite art, so a shot
+# that visually grazes the edge of the art doesn't register a hit before
+# it looks like it should. Positive would expand outward instead.
+SPRITE_SHAPE_OFFSET_PX = -3.0
+
 # --- Tank ---------------------------------------------------------------
 TANK_WIDTH = 56
 TANK_HEIGHT = 28

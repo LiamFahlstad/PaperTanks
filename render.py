@@ -8,12 +8,12 @@ config.PHYSICS_HZ.
 
 from __future__ import annotations
 
-import os
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 
 import pygame
 
 import config
+import sprite_cache
 from entities import Explosion, Projectile, Tank, WorldObject
 from world import GameState, World
 
@@ -23,15 +23,12 @@ class Renderer:
         pygame.font.init()
         self._font = pygame.font.SysFont(None, 24)
         self._big_font = pygame.font.SysFont(None, 48)
-        # Generic sprite cache, keyed by (sprite_key, size). Shared by any
-        # WorldObject that carries a sprite_key (Tank, Projectile, ...) -
-        # this class has no idea which concrete entity type it's caching for.
-        self._sprites: Dict[Tuple[str, Tuple[int, int]], pygame.Surface] = {}
-        # Tank-specific: a base sprite additionally flipped per facing.
-        # Facing (which side of the arena a tank points) is a Tank-only
-        # concept, so the flip step and its own (sprite_key, facing) cache
-        # live here rather than in the generic _get_sprite above.
-        self._tank_sprites: Dict[Tuple[str, int], pygame.Surface] = {}
+        # Sprite loading/caching (by (sprite_key, size) and, for tanks, by
+        # (sprite_key, facing)) lives in sprite_cache.py, not here - it's
+        # shared with entities.py's Tank.collision_shape(), which derives
+        # its sprite-mask collision Polygon from the same cached Surfaces.
+        # See sprite_cache.py's module docstring for why this moved out of
+        # Renderer instead of Renderer keeping a private cache.
 
     def draw(self, screen: pygame.Surface, world: World, alpha: float) -> None:
         screen.fill(config.COLOR_BG)
@@ -72,7 +69,7 @@ class Renderer:
         self._draw_hp_bar(screen, rect, tank)
 
     def _get_sprite(self, obj: WorldObject, size: Tuple[int, int]) -> Optional[pygame.Surface]:
-        """Load, scale to `size` and cache obj.sprite_key's image.
+        """obj.sprite_key's image, loaded/scaled/cached via sprite_cache.py.
 
         Returns None when obj.sprite_key is None, so the caller can fall
         back to its own primitive-shape drawing (colored rect/circle) -
@@ -81,38 +78,21 @@ class Renderer:
         This method is generic over WorldObject; it has no idea which
         concrete entity type (Tank, Projectile, ...) it's called for.
         """
-        sprite_key = obj.sprite_key
-        if sprite_key is None:
+        if obj.sprite_key is None:
             return None
-
-        cache_key = (sprite_key, size)
-        sprite = self._sprites.get(cache_key)
-        if sprite is None:
-            path = os.path.join(config.SPRITE_DIR, f"{sprite_key}.png")
-            raw = pygame.image.load(path).convert_alpha()
-            sprite = pygame.transform.scale(raw, size)
-            self._sprites[cache_key] = sprite
-        return sprite
+        return sprite_cache.get_sprite(obj.sprite_key, size)
 
     def _get_tank_sprite(self, tank: Tank) -> Optional[pygame.Surface]:
         """A tank's sprite, additionally flipped for facing.
 
-        Layered on top of the generic _get_sprite() rather than
-        reimplementing load/scale/cache, since only the flip step is
-        Tank-specific (facing isn't a concept every WorldObject has).
+        Delegates to sprite_cache.get_tank_sprite() rather than
+        reimplementing load/scale/flip/cache - this method's only job is
+        the sprite_key is None check (facing isn't a concept every
+        WorldObject has, so it can't live in the generic _get_sprite()).
         """
         if tank.sprite_key is None:
             return None
-
-        cache_key = (tank.sprite_key, tank.facing)
-        sprite = self._tank_sprites.get(cache_key)
-        if sprite is None:
-            base = self._get_sprite(tank, (config.TANK_WIDTH, config.TANK_HEIGHT))
-            if base is None:
-                return None
-            sprite = pygame.transform.flip(base, True, False) if tank.facing < 0 else base
-            self._tank_sprites[cache_key] = sprite
-        return sprite
+        return sprite_cache.get_tank_sprite(tank.sprite_key, tank.facing)
 
     def _draw_hp_bar(self, screen: pygame.Surface, rect: pygame.Rect, tank: Tank) -> None:
         bar_width = rect.width
