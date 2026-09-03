@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pygame
 
-import collision
-from entities import Tank, Terrain
+from papertanks import collision
+from papertanks.entities import Tank, Terrain
 
 
 def make_tank(x: float) -> Tank:

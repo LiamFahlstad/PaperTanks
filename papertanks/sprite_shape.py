@@ -42,8 +42,8 @@ from typing import List, Optional
 import pygame
 import pygame.mask
 
-import config
-from shapes import Polygon
+from . import config
+from .shapes import Polygon
 
 
 def polygon_from_sprite_mask(

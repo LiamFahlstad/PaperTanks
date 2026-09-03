@@ -16,10 +16,10 @@ from typing import List, Optional, Sequence
 
 import pygame
 
-import collision
-import config
-import physics
-from entities import Explosion, Projectile, Tank, Terrain
+from . import collision
+from . import config
+from . import physics
+from .entities import Explosion, Projectile, Tank, Terrain
 
 
 class GameState(Enum):

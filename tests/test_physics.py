@@ -10,7 +10,7 @@ from __future__ import annotations
 import pygame
 import pytest
 
-import physics
+from papertanks import physics
 
 
 def test_apply_gravity_adds_to_y_only():

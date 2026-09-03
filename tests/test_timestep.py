@@ -5,8 +5,8 @@ be exercised here without a real pygame window/Clock/event loop.
 
 from __future__ import annotations
 
-import config
-from game import advance_simulation, clamp_frame_time
+from papertanks import config
+from papertanks.game import advance_simulation, clamp_frame_time
 
 
 class _FakeWorld:

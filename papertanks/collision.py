@@ -24,8 +24,8 @@ from typing import Optional, Sequence
 
 import pygame
 
-from entities import Tank, Terrain
-from shapes import Polygon, Rectangle, Shape
+from .entities import Tank, Terrain
+from .shapes import Polygon, Rectangle, Shape
 
 
 def clamp(value: float, lo: float, hi: float) -> float:

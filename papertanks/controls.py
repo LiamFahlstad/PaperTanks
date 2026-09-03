@@ -19,8 +19,8 @@ from __future__ import annotations
 
 from typing import List, Sequence
 
-import config
-from world import Intent
+from . import config
+from .world import Intent
 
 
 def build_intents(keys_pressed: Sequence[bool]) -> List[Intent]:

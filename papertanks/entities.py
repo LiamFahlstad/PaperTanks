@@ -33,9 +33,9 @@ from typing import Optional
 
 import pygame
 
-import config
-import sprite_cache
-from shapes import Circle, Polygon, Rectangle, Shape
+from . import config
+from . import sprite_cache
+from .shapes import Circle, Polygon, Rectangle, Shape
 
 
 @dataclass(kw_only=True)

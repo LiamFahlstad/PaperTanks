@@ -7,8 +7,8 @@ isolation from rendering/input.
 
 from __future__ import annotations
 
-import config
-from world import GameState, Intent, World
+from papertanks import config
+from papertanks.world import GameState, Intent, World
 
 
 def test_world_constructs_with_two_alive_tanks():

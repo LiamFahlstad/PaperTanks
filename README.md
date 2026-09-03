@@ -34,15 +34,17 @@ Other keys: `P` pause/resume, `R` restart, `Esc` quit.
 
 ## Project layout
 
-- `config.py` — all tunable constants and key bindings.
-- `entities.py` — `Tank`, `Projectile`, `Explosion`, `Terrain` data.
-- `physics.py` — pure gravity/position integration.
-- `collision.py` — circle/rect tests and tunneling-safe sweeps.
-- `world.py` — simulation rules and the fixed-timestep step.
-- `controls.py` — key state to per-tank intents.
-- `render.py` — drawing only, no gameplay mutation.
-- `game.py` — main loop (fixed-timestep accumulator).
-- `main.py` — entry point.
+- `main.py` — entry point, sole file at the repo root; `python main.py`.
+- `papertanks/` — the game code package.
+  - `config.py` — all tunable constants and key bindings.
+  - `entities.py` — `Tank`, `Projectile`, `Explosion`, `Terrain` data.
+  - `physics.py` — pure gravity/position integration.
+  - `collision.py` — circle/rect tests and tunneling-safe sweeps.
+  - `world.py` — simulation rules and the fixed-timestep step.
+  - `controls.py` — key state to per-tank intents.
+  - `render.py` — drawing only, no gameplay mutation.
+  - `sprite_cache.py` / `sprite_shape.py` — sprite loading and mask-derived collision polygons.
+  - `game.py` — main loop (fixed-timestep accumulator).
 - `assets/sprites/` — sprite art (e.g. `tank1.png`).
 - `tests/` — headless pytest suite (`pytest`).
 

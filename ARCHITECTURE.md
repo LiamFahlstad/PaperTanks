@@ -19,48 +19,61 @@ system. It's a complete vertical slice, not a stub.
 
 ## 2. Module map
 
-All source lives flat at the repo root — this project is a single game,
-not a library meant to be imported elsewhere, so a `papertanks/` package
-wrapper would only add a directory level with no benefit.
+All game code lives in one importable package, `papertanks/`, so the
+repo root stays down to a single entry point plus project metadata.
+`main.py` (`python main.py`) is the only source file at the root; it
+does nothing but `from papertanks.game import main`. Every module below
+imports its project-internal neighbors with relative imports (`from .
+import config`, `from .shapes import Polygon`, etc.) — this is still a
+single game, not a library meant to be imported by other projects, so
+the package boundary exists purely to declutter the root, not to define
+a reusable public API or add layers beyond what's here.
 
 ```
-config.py      constants, tuning values, key bindings, conventions
-shapes.py      collision-shape geometry value-types: Circle, Rectangle, Polygon
-entities.py    plain data: Terrain, Tank, Projectile, Explosion
-physics.py     pure gravity/position integration functions
-collision.py   circle-vs-rect / circle-vs-polygon tests, tunneling-safe sweep
-world.py       simulation rules — the only place gameplay happens
-controls.py    keyboard state -> per-tank Intent
-render.py      draws World state to a Surface; never mutates it
-sprite_cache.py loads/scales/flips/caches sprite Surfaces + their masks
-sprite_shape.py builds a collision Polygon from a sprite's alpha mask
-game.py        the fixed-timestep main loop; wires everything together
-main.py        `python main.py` entry point
+papertanks/__init__.py    empty; marks the package
+papertanks/config.py      constants, tuning values, key bindings, conventions
+papertanks/shapes.py      collision-shape geometry value-types: Circle, Rectangle, Polygon
+papertanks/entities.py    plain data: Terrain, Tank, Projectile, Explosion
+papertanks/physics.py     pure gravity/position integration functions
+papertanks/collision.py   circle-vs-rect / circle-vs-polygon tests, tunneling-safe sweep
+papertanks/world.py       simulation rules — the only place gameplay happens
+papertanks/controls.py    keyboard state -> per-tank Intent
+papertanks/render.py      draws World state to a Surface; never mutates it
+papertanks/sprite_cache.py loads/scales/flips/caches sprite Surfaces + their masks
+papertanks/sprite_shape.py builds a collision Polygon from a sprite's alpha mask
+papertanks/game.py        the fixed-timestep main loop; wires everything together
+main.py                   `python main.py` entry point (repo root)
 ```
 
-Two sibling directories sit alongside this flat module list without
-becoming part of it: `assets/sprites/` (art, e.g. `tank1.png` -
-`config.SPRITE_DIR`) and `tests/` (see §13). Neither is a reason to
-introduce a `papertanks/` package - they hold assets and tests, not
-importable game code, so the "single flat module list" reasoning above
-is unaffected.
+Two sibling directories sit alongside `papertanks/` and `main.py` at the
+repo root: `assets/sprites/` (art, e.g. `tank1.png` - `config.SPRITE_DIR`,
+still resolved relative to the process's current working directory, not
+`papertanks/`'s location — see §9) and `tests/` (see §13). Neither is
+game code, so neither lives inside the `papertanks/` package; `tests/`
+imports it the same way an external caller would, with absolute imports
+(`from papertanks import config`, `from papertanks.world import World`),
+which is also what keeps the test suite honest about what the package
+actually exposes.
 
 Each module answers exactly one question:
 
-| Module        | Question it answers                                   |
-|----------------|--------------------------------------------------------|
-| `shapes.py`    | What geometry value-types exist for collision shapes?  |
-| `entities.py`  | What *is* a tank / projectile / terrain?               |
-| `physics.py`   | How does a thing move under gravity?                   |
-| `collision.py` | Are two shapes touching?                               |
-| `world.py`     | What happens each tick, given intents and physics?     |
-| `controls.py`  | Which keys mean "aim up" / "fire" / etc.?               |
-| `render.py`    | How does current state look on screen?                 |
-| `sprite_cache.py` | Which sprite Surface (and its mask) belongs to this key/facing? |
-| `sprite_shape.py` | What collision geometry does this sprite's art actually have? |
-| `game.py`      | In what order do input, simulation and drawing happen? |
+| Module                       | Question it answers                                   |
+|-------------------------------|--------------------------------------------------------|
+| `papertanks/shapes.py`        | What geometry value-types exist for collision shapes?  |
+| `papertanks/entities.py`      | What *is* a tank / projectile / terrain?               |
+| `papertanks/physics.py`       | How does a thing move under gravity?                   |
+| `papertanks/collision.py`     | Are two shapes touching?                               |
+| `papertanks/world.py`         | What happens each tick, given intents and physics?     |
+| `papertanks/controls.py`      | Which keys mean "aim up" / "fire" / etc.?               |
+| `papertanks/render.py`        | How does current state look on screen?                 |
+| `papertanks/sprite_cache.py`  | Which sprite Surface (and its mask) belongs to this key/facing? |
+| `papertanks/sprite_shape.py`  | What collision geometry does this sprite's art actually have? |
+| `papertanks/game.py`          | In what order do input, simulation and drawing happen? |
+| `main.py`                     | Root-level entry point; imports and calls `papertanks.game.main()`. |
 
-The dependency direction is one-way and shallow:
+The dependency direction is one-way and shallow (module names below are
+relative to `papertanks/`, and every arrow is a relative import — e.g.
+`world.py`'s edge to `physics.py` is `from . import physics`):
 
 ```
 game.py ──> controls.py ──> world.py ──> physics.py
@@ -71,6 +84,8 @@ game.py ──> controls.py ──> world.py ──> physics.py
    │                                            │                    └─> shapes.py
    └──> render.py ──────────────────────> entities.py / world.py (read-only)
                           └─────────────> sprite_cache.py
+
+main.py (repo root) ──> papertanks/game.py
 ```
 
 `render.py` and `controls.py` never talk to each other, and neither one

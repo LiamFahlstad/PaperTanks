@@ -12,10 +12,10 @@ from typing import Optional, Tuple
 
 import pygame
 
-import config
-import sprite_cache
-from entities import Explosion, Projectile, Tank, WorldObject
-from world import GameState, World
+from . import config
+from . import sprite_cache
+from .entities import Explosion, Projectile, Tank, WorldObject
+from .world import GameState, World
 
 
 class Renderer:

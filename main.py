@@ -1,6 +1,6 @@
 """Entry point: `python main.py`."""
 
-from game import main
+from papertanks.game import main
 
 if __name__ == "__main__":
     main()

@@ -57,9 +57,9 @@ from typing import Dict, Tuple
 
 import pygame
 
-import config
-from shapes import Polygon
-from sprite_shape import polygon_from_sprite_mask
+from . import config
+from .shapes import Polygon
+from .sprite_shape import polygon_from_sprite_mask
 
 _sprites: Dict[Tuple[str, Tuple[int, int]], pygame.Surface] = {}
 _tank_sprites: Dict[Tuple[str, int], pygame.Surface] = {}
