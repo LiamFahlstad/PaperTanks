@@ -141,8 +141,10 @@ WorldObject        anything that exists and is drawn
 ```
 
 `Tank` is a `CollisionBody` (has a rect or sprite-derived polygon shape,
-see §5, but never moves under simulated forces — aim/power/reload are
-direct state changes).
+see §5). It's still not a `RigidBody`: horizontal movement (§6, §12 item
+1) is its own velocity/friction integration living in `world.py`, not a
+use of `physics.py`'s gravity/integration functions, and aim/power/
+reload remain direct state changes, not physics.
 `Projectile` is a `RigidBody` (a circle shape, integrated by
 `physics.py` each tick). `Explosion` is a bare `WorldObject` — it has
 no collision shape, and the type now states that instead of leaving it
@@ -383,8 +385,9 @@ world.step(dt: float, intents: Sequence[Intent]) -> None
 is called once per fixed tick with `dt` always equal to `FIXED_DT`.
 Inside, in order:
 
-1. Apply each tank's `Intent` — clamp aim/power changes, tick down the
-   reload timer, fire if requested and off cooldown.
+1. Apply each tank's `Intent` — clamp aim/power changes, integrate
+   horizontal movement (velocity/friction, clamped to the screen), tick
+   down the reload timer, fire if requested and off cooldown.
 2. Integrate all projectiles (gravity, position, collision test,
    damage/explosion on impact).
 3. Age out explosions.
@@ -397,6 +400,7 @@ Inside, in order:
 class Intent:
     aim_delta: float = 0.0   # -1, 0, or 1
     power_delta: float = 0.0 # -1, 0, or 1
+    move_delta: float = 0.0  # -1, 0, or 1 (- left, + right)
     fire: bool = False
 ```
 
@@ -407,6 +411,19 @@ degree-per-second rate is. This means input could later come from a
 replay file, an AI opponent, or a network message, and `World` would
 behave identically, because it only ever consumes the same small
 `Intent` shape.
+
+`move_delta` is handled differently from `aim_delta`/`power_delta`
+inside `World._apply_movement`: instead of a direct per-tick rate
+applied to a value, it accelerates/decelerates a stored
+`Tank.velocity_x` (`TANK_MOVE_ACCEL` while a move key is held,
+`TANK_MOVE_FRICTION` once released, both in `config.py`), which is then
+integrated into `Tank.x` and clamped to the screen bounds. `Tank.x` is
+the only stored position field a tank has; there's no stored y; because
+`Tank.rect()`/`muzzle_position()` already call
+`terrain.height_at(self.x)` on every call rather than caching it, a
+tank's vertical placement re-derives itself from the terrain seam
+automatically as `x` changes — no separate "sync to terrain" step is
+needed in `World.step`.
 
 `GameState` (`PLAYING` / `PAUSED` / `GAME_OVER`) is also decided here:
 `step()` is a no-op whenever the state isn't `PLAYING`, so pause is
@@ -518,8 +535,12 @@ explicitly so future changes can stay consistent with them:
 
 These are deliberate omissions for this first slice, not oversights:
 
-- Tanks don't move — only aim/power/fire. Movement is the natural next
-  addition (see below).
+- Tanks move horizontally (§12 item 1 is implemented: `Intent.move_delta`
+  drives a friction/acceleration-integrated `Tank.velocity_x`), but
+  there's no tank-vs-tank collision — two tanks can currently overlap or
+  pass through each other, since only the projectile/terrain/tank
+  narrow-phase tests in `collision.py` exist. Whether tanks should block
+  each other is an open design decision, not yet made.
 - Terrain is flat. `Terrain.height_at(x)` already exists as the single
   seam a heightmap or destructible terrain would plug into, but nothing
   currently varies it.
@@ -531,9 +552,10 @@ These are deliberate omissions for this first slice, not oversights:
 
 ## 12. Natural next slices, in order
 
-1. **Tank movement** — add per-tank speed/friction constants to
-   `config.py`, extend `Intent` with a move axis, and re-derive tank
-   position against `terrain.height_at(x)` each tick in `World`.
+1. ~~**Tank movement**~~ — done: `TANK_MOVE_SPEED`/`TANK_MOVE_ACCEL`/
+   `TANK_MOVE_FRICTION` in `config.py`, `Intent.move_delta`, and
+   `World._apply_movement` (see §6). Tank-vs-tank blocking was left out
+   deliberately — see §11.
 2. **Destructible / uneven terrain** — only `Terrain.height_at()` and
    the ground-drawing code in `render.py` need to change; tanks,
    projectiles, and collision code already go through that seam.

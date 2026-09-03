@@ -27,11 +27,13 @@ def build_intents(keys_pressed: Sequence[bool]) -> List[Intent]:
     p1 = Intent(
         aim_delta=_axis(keys_pressed, config.P1_AIM_UP, config.P1_AIM_DOWN),
         power_delta=_axis(keys_pressed, config.P1_POWER_UP, config.P1_POWER_DOWN),
+        move_delta=_axis(keys_pressed, config.P1_MOVE_RIGHT, config.P1_MOVE_LEFT),
         fire=keys_pressed[config.P1_FIRE],
     )
     p2 = Intent(
         aim_delta=_axis(keys_pressed, config.P2_AIM_UP, config.P2_AIM_DOWN),
         power_delta=_axis(keys_pressed, config.P2_POWER_UP, config.P2_POWER_DOWN),
+        move_delta=_axis(keys_pressed, config.P2_MOVE_RIGHT, config.P2_MOVE_LEFT),
         fire=keys_pressed[config.P2_FIRE],
     )
     return [p1, p2]

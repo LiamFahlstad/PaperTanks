@@ -32,13 +32,15 @@ class GameState(Enum):
 class Intent:
     """One tank's requested input for a single physics tick.
 
-    aim_delta/power_delta are direction only (-1, 0, or 1); World scales
-    them by the configured rate and dt, so input handling stays agnostic
-    of tuning values.
+    aim_delta/power_delta/move_delta are direction only (-1, 0, or 1);
+    World scales them by the configured rate (and, for movement,
+    acceleration/friction) and dt, so input handling stays agnostic of
+    tuning values - same reasoning as aim/power, see controls.py.
     """
 
     aim_delta: float = 0.0
     power_delta: float = 0.0
+    move_delta: float = 0.0
     fire: bool = False
 
 
@@ -119,8 +121,50 @@ class World:
             config.TANK_POWER_MAX,
         )
 
+        self._apply_movement(tank, intent.move_delta, dt)
+
         if intent.fire and tank.reload_timer <= 0.0:
             self._fire(tank)
+
+    def _apply_movement(self, tank: Tank, move_delta: float, dt: float) -> None:
+        """Integrate horizontal ground velocity/position for one tick.
+
+        Unlike aim/power (a direct rate applied to an angle/scalar), this
+        is velocity + acceleration/friction: a held move key ramps
+        tank.velocity_x toward +-TANK_MOVE_SPEED at TANK_MOVE_ACCEL, and a
+        released one decays velocity_x toward 0 at TANK_MOVE_FRICTION -
+        the small momentum this leaves is deliberate game feel. Position
+        is then clamped to the screen bounds the same way aim/power are
+        clamped to their configured ranges (collision.clamp), keeping a
+        tank fully on-screen; velocity_x itself is left unclamped at the
+        wall (no bounce), matching how e.g. an off-screen projectile is
+        just stopped/dropped rather than bounced (see
+        World._integrate_projectiles).
+
+        Terrain height is deliberately *not* read or stored here: Tank.x
+        is the only stored position field, and Tank.rect()/
+        muzzle_position() already call terrain.height_at(self.x) fresh on
+        every call (see Tank's docstring), so every consumer of a tank's
+        position - rendering, firing, collision - re-derives y from the
+        current x automatically. There is no separate "sync to terrain"
+        step to perform each tick.
+        """
+        target_velocity = move_delta * config.TANK_MOVE_SPEED
+        rate = (
+            config.TANK_MOVE_ACCEL if move_delta != 0.0 else config.TANK_MOVE_FRICTION
+        )
+        max_delta = rate * dt
+        if tank.velocity_x < target_velocity:
+            tank.velocity_x = min(tank.velocity_x + max_delta, target_velocity)
+        else:
+            tank.velocity_x = max(tank.velocity_x - max_delta, target_velocity)
+
+        half_width = config.TANK_WIDTH / 2.0
+        tank.x = collision.clamp(
+            tank.x + tank.velocity_x * dt,
+            half_width,
+            config.SCREEN_WIDTH - half_width,
+        )
 
     def _fire(self, tank: Tank) -> None:
         owner_index = self.tanks.index(tank)

@@ -1,11 +1,13 @@
 """Headless logic smoke test: drive World.step() for real, with no
 display/window/event loop, and check the rules it documents (aim/power
-clamping, fire cooldown, gravity-driven flight, win condition) actually
-hold. This is the test ARCHITECTURE.md refers to as validating World in
-isolation from rendering/input.
+clamping, movement/friction, fire cooldown, gravity-driven flight, win
+condition) actually hold. This is the test ARCHITECTURE.md refers to as
+validating World in isolation from rendering/input.
 """
 
 from __future__ import annotations
+
+import pytest
 
 from papertanks import config
 from papertanks.world import GameState, Intent, World
@@ -75,10 +77,90 @@ def test_projectile_falls_under_gravity_and_eventually_hits_ground():
     assert len(world.explosions) >= 1  # ground/tank impact leaves explosion feedback
 
 
+def test_move_intent_moves_tank_right():
+    world = World()
+    start_x = world.tanks[0].x
+    intents = [Intent(move_delta=1.0), Intent()]
+    for _ in range(60):  # 0.5s at 120Hz
+        world.step(config.FIXED_DT, intents)
+
+    assert world.tanks[0].x > start_x
+    assert world.tanks[0].velocity_x > 0.0
+
+
+def test_move_intent_respects_top_speed():
+    world = World()
+    intents = [Intent(move_delta=1.0), Intent()]
+    # Hold move far longer than needed to reach terminal velocity.
+    for _ in range(600):
+        world.step(config.FIXED_DT, intents)
+
+    assert world.tanks[0].velocity_x == pytest.approx(config.TANK_MOVE_SPEED)
+
+
+def test_friction_stops_tank_after_move_key_released():
+    world = World()
+    intents = [Intent(move_delta=1.0), Intent()]
+    for _ in range(60):
+        world.step(config.FIXED_DT, intents)
+    assert world.tanks[0].velocity_x > 0.0
+
+    neutral = [Intent(), Intent()]
+    # Long enough to fully decelerate at TANK_MOVE_FRICTION from top speed.
+    stop_ticks = (
+        int(config.TANK_MOVE_SPEED / config.TANK_MOVE_FRICTION / config.FIXED_DT) + 5
+    )
+    for _ in range(stop_ticks):
+        world.step(config.FIXED_DT, neutral)
+
+    assert world.tanks[0].velocity_x == pytest.approx(0.0)
+
+
+def test_tank_position_stays_clamped_to_screen_bounds():
+    world = World()
+    intents = [Intent(move_delta=-1.0), Intent()]  # drive tank 0 toward the left edge
+    for _ in range(600):
+        world.step(config.FIXED_DT, intents)
+
+    half_width = config.TANK_WIDTH / 2.0
+    assert world.tanks[0].x == pytest.approx(half_width)
+
+
+def test_tank_y_tracks_terrain_height_at_x_while_moving():
+    world = World()
+    intents = [Intent(move_delta=1.0), Intent()]
+    for _ in range(30):
+        world.step(config.FIXED_DT, intents)
+
+    tank = world.tanks[0]
+    # Terrain is flat today, but rect()/muzzle_position() must derive their
+    # vertical placement from terrain.height_at(tank.x) fresh each call,
+    # not a stale/cached y - this is the seam a future heightmap plugs into.
+    assert tank.rect(world.terrain).bottom == round(world.terrain.height_at(tank.x))
+
+
+def test_aim_power_fire_unaffected_by_movement():
+    """Movement is a new, independent axis; it must not change how
+    aim/power/fire behave (regression guard for §12 item 1)."""
+    world = World()
+    intents = [
+        Intent(aim_delta=1.0, power_delta=1.0, move_delta=1.0, fire=True),
+        Intent(),
+    ]
+    world.step(config.FIXED_DT, intents)
+
+    assert len(world.projectiles) == 1
+    assert world.tanks[0].aim_deg > config.TANK_AIM_START_DEG
+    assert world.tanks[0].power > config.TANK_POWER_START
+
+
 def test_deterministic_seed_produces_identical_runs():
     """Same seed, same fixed-dt input sequence -> identical resulting
     state, which is what config.RNG_SEED and the fixed timestep are for."""
-    intents = [Intent(aim_delta=1.0, power_delta=-1.0, fire=True), Intent(fire=True)]
+    intents = [
+        Intent(aim_delta=1.0, power_delta=-1.0, move_delta=1.0, fire=True),
+        Intent(move_delta=-1.0, fire=True),
+    ]
 
     world_a = World(rng_seed=config.RNG_SEED)
     world_b = World(rng_seed=config.RNG_SEED)
@@ -88,6 +170,7 @@ def test_deterministic_seed_produces_identical_runs():
 
     assert [t.hp for t in world_a.tanks] == [t.hp for t in world_b.tanks]
     assert [t.aim_deg for t in world_a.tanks] == [t.aim_deg for t in world_b.tanks]
+    assert [t.x for t in world_a.tanks] == [t.x for t in world_b.tanks]
     assert len(world_a.projectiles) == len(world_b.projectiles)
 
 

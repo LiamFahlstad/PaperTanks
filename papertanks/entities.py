@@ -86,8 +86,11 @@ class CollisionBody(WorldObject, ABC):
 class RigidBody(CollisionBody, ABC):
     """A CollisionBody whose motion is driven each tick by physics.py's
     gravity/integration functions, as opposed to a CollisionBody like
-    Tank that never moves under simulated forces (aim/power/reload are
-    direct state changes, not physics).
+    Tank: it has its own velocity_x/friction integration (see
+    World._apply_intent) for horizontal ground movement, but that's a
+    separate, gravity-free model living in world.py, not a use of
+    physics.py's apply_gravity/integrate_position - so Tank still isn't a
+    RigidBody. aim/power/reload remain direct state changes, not physics.
     """
 
 
@@ -117,6 +120,13 @@ class Tank(CollisionBody):
     power: float = config.TANK_POWER_START
     reload_timer: float = 0.0
     alive: bool = True
+    # Horizontal ground speed (px/s, +right/-left); the only stored motion
+    # state a Tank carries. There's no stored y - rect()/muzzle_position()
+    # below already re-derive vertical placement from terrain.height_at(x)
+    # on every call, so a moving tank tracking the ground is "free" as long
+    # as x itself changes; see World._apply_intent for the friction/
+    # acceleration integration that updates x and velocity_x each tick.
+    velocity_x: float = 0.0
     # sprite_key is inherited from WorldObject; kept opt-in per Tank via the
     # same constructor kwarg as before (e.g. Tank(..., sprite_key="tank1")).
 
